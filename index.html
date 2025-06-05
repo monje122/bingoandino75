@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BINGOANDINO75 - Juegos en línea y diversión</title>
+   <!-- ✅ Metaetiquetas SEO -->
+  <meta name="description" content="Disfruta de los mejores juegos de bingo en línea. Juega, gana y diviértete con BINGO ANDINO 75." />
+  <meta name="keywords" content="bingo, juegos, en línea, ganar dinero, entretenimiento, bingoandino75, venezuela" />
+  <meta name="author" content="Bingoandino75" />
+
+  <!-- ✅ Open Graph (para redes sociales) -->
+  <meta property="og:title" content="Bingoandino75" />
+  <meta property="og:description" content="Juegos de bingo en línea con premios y diversión asegurada." />
+  <meta property="og:url" content="https://bingoandino75.com/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://i.postimg.cc/wj0b7wG6/bingo-andino75.png" />
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Ventana de bienvenida -->
+  <section id="bienvenida">
+    <footer>
+  Página creada por 
+  <a href="https://instagram.com/emprende.vene" target="_blank" rel="noopener noreferrer" style="color: #16bedb; text-decoration: none; font-weight: bold;">
+    @emprende.vene
+  </a>
+</footer>
+
+    <img src="https://i.postimg.cc/wj0b7wG6/bingo-andino75.png" alt="Logo" class="logo">
+    
+    <div id="hora-venezuela" style="margin-top: 15px; font-weight: bold; font-size: 16px;"></div>
+ <!-- Redes sociales - visible solo en la pantalla de inicio -->
+<div id="redes-sociales">
+  <a href="https://wa.me/584120632708" target="_blank" rel="noopener noreferrer" title="WhatsApp">
+    <img src="https://cdn-icons-png.flaticon.com/512/733/733585.png" alt="WhatsApp" width="40" />
+  </a>
+  <a href="https://www.youtube.com/@bingoandino75" target="_blank" rel="noopener noreferrer" title="YouTube">
+    <img src="https://cdn-icons-png.flaticon.com/512/1384/1384060.png" alt="YouTube" width="40" />
+  </a>
+  <a href="https://www.facebook.com/profile.php?id=61576936027458" target="_blank" rel="noopener noreferrer" title="Facebook">
+  <img src="https://cdn-icons-png.flaticon.com/512/733/733547.png" alt="Facebook" width="40" height="40" />
+</a>
+  <a href="https://www.instagram.com/bingoandino75?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==" target="_blank" rel="noopener noreferrer" title="Instagram">
+    <img src="https://cdn-icons-png.flaticon.com/512/1384/1384063.png" alt="Instagram" width="40" />
+  </a>
+  
+  <a id="btnWhatsapp" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">
+  Unirse al grupo de WhatsApp
+</a>
+
+</div>
+    <button onclick="mostrarVentana('inscripcion')">Comprar</button>
+    <button onclick="mostrarVentana('usuario')">Usuario</button>
+    <button onclick="mostrarVentana('lista-aprobados')">📋 Lista de Aprobados</button>
+    <button onclick="abrirEnVivo()">🔴 Ver En Vivo</button> 
+    <button onclick="mostrarVentana('admin')">Admin</button>
+  </section>
+
+
+
+  <!-- Ventana de inscripción -->
+  <section id="inscripcion" class="oculto">
+    <h2>Inscripción</h2>
+    <input type="text" placeholder="Nombre" id="nombre">
+    <input type="tel" placeholder="Teléfono" id="telefono">
+    <input type="text" placeholder="Cédula" id="cedula">
+    <input type="text" placeholder="¿Quién te refirió?" id="referido">
+   <button onclick="guardarDatosInscripcion()">Continuar</button>
+
+    <button onclick="mostrarVentana('bienvenida')">Inicio</button>
+  </section>
+<!-- Ventana de cantidad de cartones ------------------------------------>
+<section id="cantidad" class="oculto">
+  <h2>¿Cuántos cartones quieres comprar?</h2>
+
+  <div class="selector-cantidad">
+    <button id="btnMenos" type="button">−</button>
+
+    <!-- permite teclear o usar los botones -->
+    <input type="number"
+           id="cantidadCartones"
+           value="1"
+           min="1"
+           step="1" />
+
+    <button id="btnMas" type="button">+</button>
+  </div>
+
+  <p>Total a pagar: <strong><span id="monto-preseleccion">0</span> Bs</strong></p>
+
+  <button type="button" onclick="confirmarCantidad()">Continuar</button>
+  <button type="button" onclick="mostrarVentana('bienvenida')">Inicio</button>
+</section>
+
+  <!-- Selección de cartones -->
+  <section id="cartones" class="oculto">
+    <h2>Selecciona tus cartones</h2>
+    <div id="contadorCartones" class="text-center font-bold text-lg my-2">
+  Cartones disponibles: 50 de 50
+</div>
+    <div id="contenedor-cartones"></div>
+    <p>Total a pagar: <span id="monto-total">0</span> Bs</p>
+     <button id="btnContinuarCartones" onclick="mostrarVentana('pago')">Continuar</button>
+
+    <button onclick="mostrarVentana('bienvenida')">Inicio</button>
+  </section>
+
+  <!-- Ventana de pago -->
+  <section id="pago" class="oculto">
+    <h2>Pago Móvil</h2>
+    <p>Banco: Venezuela(0102)</p>
+    <p>Teléfono:0424-7052876</p>
+    <p>Cédula: 21341104</p>
+    <p>Monto a pagar: <span id="monto-pago"></span> Bs</p>
+    <input type="file" accept="image/*" id="comprobante">
+   <button onclick="enviarComprobante()">Enviar comprobante</button>
+
+    <button onclick="mostrarVentana('bienvenida')">Inicio</button>
+  </section>
+
+  <!-- Ventana usuario -->
+  <section id="usuario" class="oculto">
+    <h2>Consultar cartones</h2>
+    <input type="text" placeholder="Ingresa tu cédula" id="consulta-cedula">
+    <button onclick="consultarCartones()">Consultar</button>
+    <div id="cartones-usuario"></div>
+    <button id="btnElegirMas" onclick="elegirMasCartones()">Elegir más cartones</button>
+<button onclick="mostrarVentana('bienvenida')">Inicio</button>
+  </section>
+ 
+<!-- Panel admin -->
+<section id="admin" class="oculto">
+  <h2>Panel de Administración</h2>
+  <input type="password" placeholder="Clave" id="clave-admin">
+  <button onclick="entrarAdmin()">Entrar</button>
+  <button onclick="mostrarVentana('bienvenida')">Inicio</button>
+  <div id="panel-admin" class="oculto">
+    <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+  <button id="cerrarVentasBtn" class="btn-admin">Cerrar Ventas</button>
+  <button id="abrirVentasBtn">Abrir Ventas</button>
+  <button onclick="reiniciarTodo()">Reiniciar Todo</button>
+</div>
+    <div>
+  <label for="precioCarton">Precio por cartón:</label>
+  <input type="number" id="precioCarton" min="0" step="0.01" />
+  <button id="guardarPrecioBtn">Guardar precio</button>
+</div>
+    <p>Total de cartones vendidos: <span id="total-vendidos">0</span></p>
+    <p>Total clientes inscritos: <span id="contador-clientes"></span></p>
+<p>Total recaudado: <strong id="totalMonto">$0.00</strong></p>
+
+
+    <h3>Inscripciones pendientes</h3>
+
+    <table id="tabla-comprobantes">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Teléfono</th>
+          <th>Cédula</th>
+           <th>Referido</th>
+          <th># Cartones</th>
+          <th>Comprobante</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+<button id="verListaBtn">Ver lista</button>
+    <button id="imprimirListaBtn">Imprimir Lista</button>
+    <h3>lista de aprobados</h3>
+<div id="listaAprobados"></div>
+    
+<h4>Subir imágenes de cartones</h4>
+<input type="file" id="cartonImageInput" multiple accept="image/*">
+<button onclick="subirCartones()">Subir imágenes</button>
+<div id="uploadStatus"></div>
+<button onclick="borrarCartones()" style="background-color: red; color: white; padding: 10px; border: none; border-radius: 5px;">
+  Borrar todas las imágenes de cartones
+</button>
+<div id="deleteStatus"></div>
+<label for="inputWhatsapp">Enlace WhatsApp:</label>
+<input type="text" id="inputWhatsapp" placeholder="https://chat.whatsapp.com/xxxx">
+<button onclick="guardarLinkWhatsapp()">Guardar enlace</button>
+
+<h3>Cambiar cantidad total de cartones</h3>
+<input type="number" id="nuevoTotalCartones" placeholder="Ej: 300">
+<button onclick="guardarNuevoTotal()">Guardar nuevos cartones</button>
+<p id="estadoTotalCartones"></p>
+    
+<label for="inputYoutube">Enlace del En Vivo (YouTube):</label>
+<input type="text" id="inputYoutube" placeholder="https://www.youtube.com/watch?v=xxxxx">
+<button onclick="guardarLinkYoutube()">Guardar enlace</button>
+
+  <button onclick="mostrarVentana('bienvenida')">Inicio</button>
+</section>
+ <!-- Ventana aprobados -->
+
+
+<section id="lista-aprobados" class="oculto">
+  <h2>Lista de Aprobados</h2>
+  <div id="contenedor-aprobados"></div>
+  <button onclick="mostrarVentana('bienvenida')">Inicio</button>
+</section>
+
+<!-- Modal de vista previa del cartón -->
+<div id="modal-carton" class="modal oculto">
+  <div class="modal-contenido">
+    <img id="imagen-carton-modal" src="" alt="Cartón" style="width: 100%; max-width: 300px;">
+    <div style="margin-top: 10px;">
+      <button id="btnSeleccionarCarton">Seleccionar</button>
+      <button onclick="cerrarModalCarton()">Cerrar</button>
+    </div>
+  </div>
+</div>
+ 
+  
+  <div id="modal-terminos" class="modal oculto">
+  <div class="modal-contenido">
+    <h2>Importante antes de jugar</h2>
+    <p style="max-height: 300px; overflow-y: auto; text-align: left; font-size: 14px; line-height: 1.5;">
+      Al momento de seleccionar sus números el jugador debe verificar Fechas, Premios y Hora de juego para estar al tanto de toda la información.<br><br>
+      Una vez el sistema registre la compra, no se realizan devoluciones.<br><br>
+      Luego de realizar su compra debe esperar unos minutos a que sea verificada.<br><br>
+      Puede verificar su jugada haciendo click en "Usuario" (si no aparecen los números, la jugada aún no ha sido verificada).<br><br>
+      <strong>Al finalizar la compra, únase al grupo de juego DE INMEDIATO.</strong>
+    </p>
+    <button onclick="cerrarTerminos()">Aceptar</button>
+  </div>
+</div>
+
+ <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="script.js"></script>
+</body>
+</html>
