@@ -1,0 +1,274 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: #24AD58;
+  color: #333;
+}
+
+section {
+  display: none;
+  padding: 20px;
+  max-width: 500px;
+  margin: auto;
+  text-align: center;
+}
+
+section:not(.oculto) {
+  display: block;
+}
+
+.logo {
+  display: block;
+  margin: 50px auto 20px;
+  width: 250px;
+}
+
+input, button {
+  display: block;
+  width: 100%;
+  margin: 10px auto;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+
+button {
+  background-color:  #FFA500;
+  color: #000;
+  border: none;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #F9E65C;
+}
+
+.oculto {
+  display: none;
+}
+
+#contenedor-cartones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.carton {
+  width: 60px;
+  height: 60px;
+  background-color: #e0e0e0;
+  border: 2px solid #999;
+  border-radius: 10px;
+  font-size: 18px;
+  line-height: 60px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.3s;
+}
+
+.carton.seleccionado {
+  background-color: red;
+  color: white;
+}
+
+.carton.ocupado {
+  background-color: red;
+  color: white;
+  cursor: not-allowed;
+}
+
+.btn-fijo {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #FFA500;
+  color: white;
+  border: none;
+  padding: 15px 25px;
+  font-size: 16px;
+  border-radius: 50px;
+}
+
+@media (max-width: 600px) {
+  .carton {
+    width: 50px;
+    height: 50px;
+    line-height: 50px;
+    font-size: 16px;
+  }
+
+  .btn-fijo {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+}
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-contenido {
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.oculto {
+  display: none;
+}
+#tabla-comprobantes {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+  font-size: 14px;
+}
+
+#tabla-comprobantes th,
+#tabla-comprobantes td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: center;
+}
+
+#tabla-comprobantes img {
+  width: 80px;
+  border-radius: 6px;
+}
+
+.btn-accion {
+  font-size: 18px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+
+.btn-aprobar { color: #28a745; }   /* ✅ verde  */
+.btn-rechazar { color: #dc3545; }  /* ❌ rojo   */
+
+#btnContinuarCartones {
+  padding: 10px 20px;
+  font-size: 14px;
+  background-color: #FFA500;
+  color: #000;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 20px; /* espacio con respecto a otros elementos */
+}
+
+#btnContinuarCartones:hover {
+  background-color: #F9E65C;
+}
+#redes-sociales {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 20px;
+  z-index: 999;
+  padding: 10px 20px;
+  border-radius: 30px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+   background-color: #FFA500;
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #listaAprobados, #listaAprobados * {
+    visibility: visible;
+  }
+  #listaAprobados {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
+.selector-cantidad {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.selector-cantidad button {
+  width: 40px;
+  height: 40px;
+  font-size: 24px;
+  font-weight: bold;
+  line-height: 0;
+}
+.selector-cantidad input {
+  max-width: 80px;
+  text-align: center;
+}
+button {
+  background-color:  #FFA500;
+  color: #000;
+  border: none;
+  cursor: pointer;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 400px;
+  margin: 10px auto;
+  display: block;
+}
+
+button:hover {
+  background-color: #F9E65C;
+}
+#btnWhatsapp {
+  background-color: #25d366; /* verde WhatsApp */
+  color: white;
+  padding: 12px 20px;
+  border-radius: 25px;
+  text-decoration: none;
+  font-weight: bold;
+  display: inline-block;
+  cursor: pointer;
+}
+
+#btnWhatsapp:hover {
+  background-color: #1ebe57;
+}
+#modal-terminos .modal-contenido {
+  color: black;
+}
+body {
+  color: white; /* texto general blanco */
+}
+.carton {
+  color: black;
+}
+#pago h2, #pago p {
+  font-weight: bold;  /* Esto hará que el texto sea más grueso */
+}
+body {
+  margin: 0;
+  padding: 0;
+  background-image: url('https://i.postimg.cc/Y0cNyFhG/fondo-fondo-andino.png'); /* o sube la imagen a PostImage u otro CDN y usa su URL */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  font-family: sans-serif;
+}
