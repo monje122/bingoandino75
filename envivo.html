@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Transmisión en Vivo</title>
+  <style>
+    body {
+  margin: 0;
+  background-image: url('https://i.postimg.cc/Y0cNyFhG/fondo-fondo-andino.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+    iframe {
+      width: 90vw;
+      height: 50vw;
+      max-width: 1000px;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+
+  <iframe id="youtube-frame" allowfullscreen allow="autoplay"></iframe>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const supabase = supabase.createClient(
+      'https://dbkixcpwirjwjvjintkr.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+    );
+
+    async function cargarVideo() {
+      const { data, error } = await supabase
+        .from('configuracion')
+        .select('valor')
+        .eq('clave', 'youtube_live')
+        .single();
+
+      if (data && data.valor) {
+        try {
+          const url = new URL(data.valor);
+          const id = url.searchParams.get("v");
+          if (id) {
+            document.getElementById("youtube-frame").src = `https://www.youtube.com/embed/${id}?autoplay=1`;
+          } else {
+            document.body.innerHTML = "<h2 style='color: white;'>El enlace no es válido</h2>";
+          }
+        } catch {
+          document.body.innerHTML = "<h2 style='color: white;'>Error al procesar el enlace</h2>";
+        }
+      } else {
+        document.body.innerHTML = "<h2 style='color: white;'>No hay transmisión en vivo disponible</h2>";
+      }
+    }
+
+    cargarVideo();
+  </script>
+</body>
+</html>
