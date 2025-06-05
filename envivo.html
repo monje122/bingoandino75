@@ -49,7 +49,7 @@
     async function cargarVideo() {
       const { data, error } = await supabase
         .from('configuracion')
-        .select('valor')
+        .select('valore')
         .eq('clave', 'youtube_live')
         .single();
 
