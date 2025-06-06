@@ -1199,4 +1199,16 @@ supabase
     }
   )
   .subscribe(); // 8. Activa la suscripción
+async function activarCohetes() {
+  const { error } = await supabase
+    .from('configuracion')
+    .update({ valore: true })
+    .eq('clave', 'cohetes_activados');
 
+  if (error) {
+    alert("Error activando cohetes");
+    console.error(error);
+  } else {
+    alert("¡Cohetes activados!");
+  }
+}
