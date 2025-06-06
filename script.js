@@ -308,11 +308,11 @@ async function entrarAdmin() {
   }
 
   // Mostrar panel si la clave es correcta
-  document.getElementById('panel-admin').classList.remove('oculto');
+  
   obtenerMontoTotalRecaudado();
   contarCartonesVendidos();
 obtenerMontoTotalRecaudado();
-  document.getElementById('panel-admin').classList.remove('oculto');
+  
   contarCartonesVendidos();
 document.getElementById('verListaBtn').addEventListener('click', async () => {
   const { data, error } = await supabase
