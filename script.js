@@ -979,3 +979,8 @@ async function guardarLinkYoutube() {
     alert("Enlace de YouTube guardado exitosamente.");
   }
   }
+async function cargarPanelAdmin() {
+  await obtenerMontoTotalRecaudado();
+  await contarCartonesVendidos();
+  await cargarCartones(); // ← asegúrate de que esto se llama
+}
