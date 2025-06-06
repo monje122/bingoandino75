@@ -17,6 +17,7 @@ let usuario = {
 window.addEventListener('DOMContentLoaded', async () => {
   await obtenerTotalCartones(); // lee desde Supabase
    await cargarPrecioPorCarton();
+  await cargarConfiguracionModoCartones(); 
   generarCartones();// genera del 1 al totalCartones
 
 });
@@ -75,18 +76,25 @@ document.getElementById('cantidadCartones').addEventListener('input', actualizar
 function confirmarCantidad() {
   const cant = parseInt(document.getElementById('cantidadCartones').value);
   const maxDisponibles = totalCartones - cartonesOcupados.length;
-
+  
+  
+  if (modoCartones === 'fijo') {
+    if (cant !== cantidadFijaCartones) {
+      return alert(`Debes seleccionar exactamente ${cantidadFijaCartones} cartones.`);
+    }
+  } else {
   if (isNaN(cant) || cant < 1) {
     return alert('Ingresa un número válido');
   }
   if (cant > maxDisponibles) {
     return alert(`Solo quedan ${maxDisponibles} cartones disponibles`);
   }
-
+}
   cantidadPermitida   = cant;   // guardamos el tope
   usuario.cartones    = [];     // limpiamos selección anterior, si hubiera
   mostrarVentana('cartones');
-}
+   }
+  
 
 // Navegación entre secciones
 async function mostrarVentana(id) {
@@ -105,16 +113,20 @@ async function mostrarVentana(id) {
   return;
 }
   }
-
-
+ if (id === 'pago') {
+    
+     if (modoCartones === 'fijo' && usuario.cartones.length !== cantidadFijaCartones) {
+    return alert(`Debes elegir exactamente ${cantidadFijaCartones} cartones antes de continuar.`);
+}
+  }
   // Ahora mostramos la ventana deseada
   document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
   document.getElementById(id).classList.remove('oculto');
 
   if (id === 'cartones') {
     cargarCartones();
+ 
   }
-
   if (id === 'pago') {
     document.getElementById('monto-pago').textContent = usuario.cartones.length * precioPorCarton;
   }
@@ -122,7 +134,6 @@ async function mostrarVentana(id) {
   if (id === 'lista-aprobados') {
     await cargarListaAprobadosSeccion();
   }
-  
 }
 // Guardar datos del formulario
 function guardarDatosInscripcion() {
@@ -982,5 +993,183 @@ async function guardarLinkYoutube() {
 async function cargarPanelAdmin() {
   await obtenerMontoTotalRecaudado();
   await contarCartonesVendidos();
+  await cargarModoCartonesAdmin();
   await cargarCartones(); // ← asegúrate de que esto se llama
+}
+let modoCartones = "libre";
+let cantidadFijaCartones = 1;
+
+async function cargarConfiguracionModoCartones() {
+  const { data: modoData, error: modoError } = await supabase
+    .from('configuracion')
+    .select('valore')
+    .eq('clave', 'modo_cartones')
+    .single();
+
+  if (!modoError && modoData) {
+    modoCartones = modoData.valore; // "fijo" o "libre"
+  }
+
+  if (modoCartones === "fijo") {
+    const { data: cantData, error: cantError } = await supabase
+      .from('configuracion')
+      .select('valore')
+      .eq('clave', 'cartones_obligatorios')
+      .single();
+
+    if (!cantError && cantData) {
+      cantidadFijaCartones = parseInt(cantData.valore) || 1;
+    }
+  }
+}
+async function cargarModoCartonesAdmin() {
+  const { data: modoData } = await supabase
+    .from('configuracion')
+    .select('valore')
+    .eq('clave', 'modo_cartones')
+    .single();
+
+  if (modoData) {
+    document.getElementById('modoCartonesSelect').value = modoData.valore;
+  }
+
+  if (modoData && modoData.valore === 'fijo') {
+    const { data: cantData } = await supabase
+      .from('configuracion')
+      .select('valore')
+      .eq('clave', 'cartones_obligatorios')
+      .single();
+
+    if (cantData) {
+      document.getElementById('cantidadCartonesFijos').value = cantData.valore;
+    }
+    document.getElementById('contenedorCartonesFijos').style.display = 'block';
+  } else {
+    document.getElementById('contenedorCartonesFijos').style.display = 'none';
+  }
+}
+document.getElementById('modoCartonesSelect').addEventListener('change', () => {
+  const modo = document.getElementById('modoCartonesSelect').value;
+  const contenedor = document.getElementById('contenedorCartonesFijos');
+  contenedor.style.display = (modo === 'fijo') ? 'block' : 'none';
+});
+document.getElementById('guardarModoCartonesBtn').addEventListener('click', async () => {
+  const modo = document.getElementById('modoCartonesSelect').value;
+  const cantidad = parseInt(document.getElementById('cantidadCartonesFijos').value);
+
+  const updates = [
+    { clave: 'modo_cartones', valore: modo }
+  ];
+
+  if (modo === 'fijo') {
+    if (isNaN(cantidad) || cantidad < 1) {
+      return alert('Cantidad fija inválida');
+    }
+    updates.push({ clave: 'cartones_obligatorios', valore: cantidad });
+  }
+
+  const { error } = await supabase
+    .from('configuracion')
+    .upsert(updates, { onConflict: 'clave' });
+
+  if (error) {
+    alert('Error guardando configuración');
+    console.error(error);
+  } else {
+    alert('Modo actualizado correctamente');
+  }
+});
+async function guardarGanador() {
+  const nombre   = document.getElementById('ganadorNombre').value.trim();
+  const cedula   = document.getElementById('ganadorCedula').value.trim();
+  const cartones = document.getElementById('ganadorCartones').value.trim();
+  const premio   = document.getElementById('ganadorPremio').value.trim();
+  const fecha    = document.getElementById('ganadorFecha').value.trim(); // ahora manual
+
+  if (!nombre || !cedula || !cartones || !premio || !fecha) {
+    return alert("Completa todos los campos del ganador.");
+  }
+
+  const { error } = await supabase
+    .from('ganadores')
+    .insert([{ nombre, cedula, cartones, premio, fecha }]);
+
+  if (error) {
+    console.error(error);
+    alert("Error al guardar el ganador.");
+  } else {
+    alert("¡Ganador guardado correctamente!");
+    document.getElementById('formularioGanador').reset();
+    cargarGanadores();
+  }
+}
+
+async function mostrarSeccion(id) {
+  document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
+  document.getElementById(id).classList.remove('oculto');
+
+  if (id === 'ganadores') {
+    await cargarGanadores();
+  }
+}
+
+async function cargarGanadores() {
+  const { data, error } = await supabase
+    .from('ganadores')
+    .select('*')
+    .order('id', { ascending: false });
+
+  const contenedor = document.getElementById('listaGanadores');
+  contenedor.innerHTML = '';
+
+  if (error || !data.length) {
+    contenedor.innerHTML = '<p>No hay ganadores registrados aún.</p>';
+    return;
+  }
+
+  const tabla = document.createElement('table');
+  tabla.style.width = '100%';
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Cédula</th>
+        <th>Cartones</th>
+        <th>Premio</th>
+        <th>Fecha</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${data.map(g => `
+        <tr>
+          <td>${g.nombre}</td>
+          <td>${g.cedula}</td>
+          <td>${g.cartones}</td>
+          <td>${g.premio}</td>
+          <td>${g.fecha || ''}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  `;
+  contenedor.appendChild(tabla);
+}
+document.querySelectorAll('#formularioGanador input').forEach((input, index, all) => {
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // evitar que intente enviar el form
+      if (index < all.length - 1) {
+        all[index + 1].focus(); // enfoca el siguiente input
+      }
+    }
+  });
+});
+document.getElementById('clave-admin').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault(); // evita el comportamiento por defecto
+    entrarAdmin(); // llama a la función de acceso
+  }
+});
+function toggleFormularioGanador() {
+  const contenedor = document.getElementById('formularioGanadorContenedor');
+  contenedor.style.display = contenedor.style.display === 'none' ? 'block' : 'none';
 }
