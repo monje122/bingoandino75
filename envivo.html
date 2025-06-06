@@ -38,7 +38,7 @@
       try {
         const url = new URL(link);
         if (url.hostname === "youtu.be") {
-          return url.pathname.slice(1); // corta el "/"
+          return url.pathname.slice(1); // elimina la barra inicial
         }
         return url.searchParams.get("v");
       } catch {
@@ -49,7 +49,7 @@
     async function cargarVideo() {
       const { data, error } = await supabase
         .from('configuracion')
-        .select('valore')
+        .select('valore')  // usa la columna correcta
         .eq('clave', 'youtube_live')
         .single();
 
