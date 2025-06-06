@@ -54,10 +54,15 @@
     <button onclick="mostrarVentana('usuario')">Usuario</button>
     <button onclick="mostrarVentana('lista-aprobados')">📋 Lista de Aprobados</button>
     <button onclick="window.open('envivo.html', '_blank')">🔴 Ver En Vivo</button>
+    <button onclick="mostrarSeccion('ganadores')">Historial de ganadores</button>
     <button onclick="mostrarVentana('admin')">Admin</button>
   </section>
 
-
+<section id="ganadores" class="oculto">
+  <h2>🎉 Lista de ganadores</h2>
+  <div id="listaGanadores"></div>
+  <button onclick="mostrarSeccion('bienvenida')">inicio</button>
+</section>
 
   <!-- Ventana de inscripción -->
   <section id="inscripcion" class="oculto">
@@ -188,11 +193,40 @@
 <input type="number" id="nuevoTotalCartones" placeholder="Ej: 300">
 <button onclick="guardarNuevoTotal()">Guardar nuevos cartones</button>
 <p id="estadoTotalCartones"></p>
+
+<h3>Modo de selección de cartones</h3>
+<select id="modoCartonesSelect">
+  <option value="fijo">Fijo</option>
+  <option value="libre">Libre</option>
+</select>
+
+<div id="contenedorCartonesFijos">
+  <label>Cantidad obligatoria:</label>
+  <input type="number" id="cantidadCartonesFijos" min="1" step="1">
+</div>
+
+<button id="guardarModoCartonesBtn">Guardar configuración</button>
+    
     
 <label for="inputYoutube">Enlace del En Vivo (YouTube):</label>
 <input type="text" id="inputYoutube" placeholder="https://www.youtube.com/watch?v=xxxxx">
 <button onclick="guardarLinkYoutube()">Guardar enlace</button>
 
+<button onclick="toggleFormularioGanador()">Registrar nuevo ganador</button>
+
+<div id="formularioGanadorContenedor" style="display: none;">
+  <form id="formularioGanador">
+    <input type="text" id="ganadorNombre" placeholder="Nombre del ganador" required><br>
+    <input type="text" id="ganadorCedula" placeholder="Cédula" required><br>
+    <input type="text" id="ganadorCartones" placeholder="Cartones ganadores (ej: 15, 23)" required><br>
+    <input type="text" id="ganadorPremio" placeholder="Premio ganado" required><br>
+    <input type="date" id="ganadorFecha" required><br>
+    <button type="button" onclick="guardarGanador()">Guardar Ganador</button>
+  </form>
+</div>
+
+
+    
   <button onclick="mostrarVentana('bienvenida')">Inicio</button>
 </section>
  <!-- Ventana aprobados -->
