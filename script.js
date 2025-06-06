@@ -1173,3 +1173,30 @@ function toggleFormularioGanador() {
   const contenedor = document.getElementById('formularioGanadorContenedor');
   contenedor.style.display = contenedor.style.display === 'none' ? 'block' : 'none';
 }
+supabase
+  .channel('configuracion-changes')       // 1. Crea un canal de escucha llamado "configuracion-changes"
+  .on(
+    'postgres_changes',                   // 2. Escucha cambios en la base de datos de tipo "postgres_changes"
+    {
+      event: 'UPDATE',                   // 3. Solo escucha eventos de tipo "UPDATE"
+      schema: 'public',                  // 4. En el esquema público
+      table: 'configuracion',            // 5. En la tabla "configuracion"
+      filter: 'clave=in.(modo_cartones,cartones_obligatorios)' // 6. Pero solo si se actualiza el campo "modo_cartones" o "cartones_obligatorios"
+    },
+    async (payload) => {                 // 7. Esto es lo que ocurre cuando se detecta el cambio:
+      const clave = payload.new.clave;
+      const valor = payload.new.valore;
+
+      if (clave === 'modo_cartones') {
+        modoCartones = valor; // actualiza la variable global
+        document.getElementById('modoCartonesSelect').value = valor; // actualiza el select en el admin
+      }
+
+      if (clave === 'cartones_obligatorios') {
+        cantidadFijaCartones = parseInt(valor); // actualiza la variable global
+        document.getElementById('cantidadCartonesFijos').value = valor; // actualiza el input en el admin
+      }
+    }
+  )
+  .subscribe(); // 8. Activa la suscripción
+
