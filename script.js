@@ -287,13 +287,24 @@ usuario.cartones = [];
 
 // Entrar al panel admin
 async function entrarAdmin() {
-  const clave = document.getElementById('clave-admin').value;
-  const enmascarado = 'QW5nZWxvLjI1NTUw'; 
-  const claveCorrecta = atob(enmascarado);
+  const claveIngresada = document.getElementById("clave-admin").value;
 
-  if (clave !== claveCorrecta) {
-    alert('Clave incorrecta');
+  const { data: claveData, error: claveError } = await supabase
+    .from('configuracion')
+    .select('valore')
+    .eq('clave', 'clave_admin')
+    .single();
+
+  if (claveError) {
+    alert("Error consultando la clave.");
     return;
+  }
+
+  if (claveIngresada === claveData.valore) {
+    document.getElementById("panel-admin").classList.remove("oculto");
+    await cargarPanelAdmin();
+  } else {
+    alert("Clave incorrecta.");
   }
 
   // Mostrar panel si la clave es correcta
