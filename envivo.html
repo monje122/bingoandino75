@@ -62,7 +62,7 @@
     async function cargarVideo() {
       const { data, error } = await supabaseClient
         .from('configuracion')
-        .select('valore')
+        .select('valor')
         .eq('clave', 'youtube_live')
         .single();
 
@@ -72,7 +72,7 @@
         return;
       }
 
-      const id = extraerIDYoutube(data.valore);
+      const id = extraerIDYoutube(data.valor);
       if (id) {
         document.getElementById("youtube-frame").src = `https://www.youtube.com/embed/${id}?autoplay=1`;
       } else {
@@ -105,14 +105,14 @@
         table: 'configuracion',
         filter: 'clave=eq.cohetes_activados'
       }, payload => {
-        const nuevoValor = payload.new.valore;
+        const nuevoValor = payload.new.valor;
         if (nuevoValor === true || nuevoValor === "true") {
           fireworks.start();
           setTimeout(() => {
             fireworks.stop();
             supabaseClient
               .from('configuracion')
-              .update({ valore: false })
+              .update({ valor: false })
               .eq('clave', 'cohetes_activados');
           }, 10000);
         }
