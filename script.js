@@ -959,7 +959,7 @@ async function guardarLinkYoutube() {
   const link = document.getElementById("inputYoutube").value;
   const { error } = await supabase
     .from("configuracion")
-    .update({ valor: link })
+    .update({ valore: link })
     .eq("clave", "youtube_live");
 
   if (error) {
