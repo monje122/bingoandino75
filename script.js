@@ -1202,7 +1202,7 @@ supabase
 async function activarCohetes() {
   const { error } = await supabase
     .from('configuracion')
-    .update({ valore: true })
+    .update({ valor: true })
     .eq('clave', 'cohetes_activados');
 
   if (error) {
