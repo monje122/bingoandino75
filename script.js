@@ -286,7 +286,7 @@ async function consultarCartones() {
   data.forEach(item => {
     item.cartones.forEach(num => {
       const img = document.createElement('img');
-      img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BUENA SUERTE_CARTON_${String(num).padStart(5, '0')}.jpg`;
+      img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BINGOANDINO75_CARTON_${String(num).padStart(5, '0')}.jpg`;
 
       img.style.width = '100px';
       img.style.margin = '5px';
@@ -481,7 +481,7 @@ function abrirModalCarton(numero, elemento) {
   cartonSeleccionadoTemporal = numero;
   cartonElementoTemporal = elemento;
   const img = document.getElementById('imagen-carton-modal');
-  img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BUENA SUERTE_CARTON_${String(numero).padStart(5, '0')}.jpg`;
+  img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BINGOANDINO75_CARTON_${String(numero).padStart(5, '0')}.jpg`;
 
   document.getElementById('modal-carton').classList.remove('oculto');
 
