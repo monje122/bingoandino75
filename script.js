@@ -1207,7 +1207,6 @@ async function activarCohetes() {
 
   if (error) {
     alert("Error activando cohetes");
-    console.error(error);
   } else {
     alert("¡Cohetes activados!");
   }
