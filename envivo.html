@@ -39,7 +39,8 @@
 
   <!-- Librerías necesarias -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/fireworks-js@2.10.3/dist/fireworks.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fireworks-js@2.10.3/dist/fireworks.umd.js"></script>
+
 
   <script>
     const supabaseClient = supabase.createClient(
@@ -83,7 +84,7 @@
     cargarVideo();
 
     // Configuración de fireworks
-    const fireworks = new window.Fireworks(document.getElementById('cohetesCanvas'), {
+    const fireworks = new Fireworks(document.getElementById('cohetesCanvas'), {
       hue: { min: 0, max: 360 },
       delay: { min: 15, max: 30 },
       rocketsPoint: 50,
