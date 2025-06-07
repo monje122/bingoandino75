@@ -43,7 +43,10 @@
   <iframe id="youtube-frame" allowfullscreen allow="autoplay"></iframe>
   <div id="cohetesGif"></div>
 
-  <!-- Librerías necesarias -->
+  <!-- Sonido de cohetes -->
+  <audio id="sonidoCohetes" src="https://www.myinstants.com/en/instant/pirotecnia-77006/?utm_source=copy&utm_medium=share" preload="auto"></audio>
+
+  <!-- Librería Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
@@ -53,20 +56,15 @@
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
       );
 
-      // Función para extraer ID del video de YouTube
       function extraerIDYoutube(link) {
         try {
           const url = new URL(link);
-          if (url.hostname === "youtu.be") {
-            return url.pathname.slice(1);
-          }
-          return url.searchParams.get("v");
+          return url.hostname === "youtu.be" ? url.pathname.slice(1) : url.searchParams.get("v");
         } catch {
           return null;
         }
       }
 
-      // Cargar el video desde Supabase
       async function cargarVideo() {
         const { data, error } = await supabaseClient
           .from('configuracion')
@@ -80,16 +78,13 @@
         }
 
         const id = extraerIDYoutube(data.valore);
-        if (id) {
-          document.getElementById("youtube-frame").src = `https://www.youtube.com/embed/${id}?autoplay=1`;
-        } else {
-          document.body.innerHTML = "<h2 style='color: white;'>Enlace inválido</h2>";
-        }
+        document.getElementById("youtube-frame").src =
+          id ? `https://www.youtube.com/embed/${id}?autoplay=1` : "<h2 style='color: white;'>Enlace inválido</h2>";
       }
 
       await cargarVideo();
 
-      // Escuchar activación de cohetes en tiempo real
+      // 🔊 Reproducir cohetes con sonido en tiempo real
       supabaseClient
         .channel('cohetes')
         .on('postgres_changes', {
@@ -101,15 +96,26 @@
           const valor = payload.new.valore;
           if (valor === true || valor === "true") {
             const gif = document.getElementById('cohetesGif');
+            const sonido = document.getElementById('sonidoCohetes');
+
             gif.style.display = 'block';
+            try {
+              sonido.currentTime = 0;
+              await sonido.play();
+            } catch (e) {
+              console.warn("⚠️ Sonido bloqueado por navegador (autoplay)", e);
+            }
 
             setTimeout(() => {
               gif.style.display = 'none';
+              sonido.pause();
+              sonido.currentTime = 0;
+
               supabaseClient
                 .from('configuracion')
                 .update({ valore: false })
                 .eq('clave', 'cohetes_activados');
-            }, 10000);
+            }, 8000);
           }
         })
         .subscribe();
