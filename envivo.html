@@ -10,8 +10,10 @@
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
+      display: flex;
+      justify-content: center;
+      align-items: center;
       height: 100vh;
-      overflow: hidden;
     }
 
     iframe {
@@ -19,97 +21,95 @@
       height: 50vw;
       max-width: 1000px;
       border: none;
-      display: block;
-      margin: 50px auto;
       z-index: 1;
-      position: relative;
     }
 
-    canvas#cohetesCanvas {
+    #cohetesGif {
+      display: none;
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      z-index: 999;
+      background: url('https://i.gifer.com/7efs.gif') center center no-repeat;
+      background-size: cover;
+      z-index: 9999;
       pointer-events: none;
     }
   </style>
 </head>
 <body>
 
-  <!-- Video de YouTube -->
   <iframe id="youtube-frame" allowfullscreen allow="autoplay"></iframe>
+  <div id="cohetesGif"></div>
 
-  <!-- Lienzo para cohetes -->
-  <canvas id="cohetesCanvas"></canvas>
-
-  <!-- Scripts -->
+  <!-- Librerías necesarias -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/fireworks-js@2.10.3/dist/fireworks.umd.js"></script>
 
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
-      const supabase = window.supabase.createClient(
+      const supabaseClient = supabase.createClient(
         'https://dbkixcpwirjwjvjintkr.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
       );
 
-      // Cargar el video de YouTube desde Supabase
+      // Función para extraer ID del video de YouTube
+      function extraerIDYoutube(link) {
+        try {
+          const url = new URL(link);
+          if (url.hostname === "youtu.be") {
+            return url.pathname.slice(1);
+          }
+          return url.searchParams.get("v");
+        } catch {
+          return null;
+        }
+      }
+
+      // Cargar el video desde Supabase
       async function cargarVideo() {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
           .from('configuracion')
           .select('valore')
           .eq('clave', 'youtube_live')
           .single();
 
         if (error || !data) {
-          console.error("Error al obtener el video", error);
+          document.body.innerHTML = "<h2 style='color: white;'>Error al cargar el video</h2>";
           return;
         }
 
-        const url = data.valore;
-        const id = url.includes("youtu.be")
-          ? url.split("/").pop()
-          : new URL(url).searchParams.get("v");
-
-        document.getElementById("youtube-frame").src = `https://www.youtube.com/embed/${id}?autoplay=1`;
+        const id = extraerIDYoutube(data.valore);
+        if (id) {
+          document.getElementById("youtube-frame").src = `https://www.youtube.com/embed/${id}?autoplay=1`;
+        } else {
+          document.body.innerHTML = "<h2 style='color: white;'>Enlace inválido</h2>";
+        }
       }
 
-      cargarVideo();
+      await cargarVideo();
 
-      // Configurar cohetes
-      const canvas = document.getElementById('cohetesCanvas');
-      const fireworks = new Fireworks(canvas, {
-        hue: { min: 0, max: 360 },
-        delay: { min: 15, max: 30 },
-        rocketsPoint: 50,
-        speed: 2,
-        acceleration: 1.05,
-        friction: 0.97,
-        gravity: 1.5,
-        particles: 50,
-        trace: 3,
-        explosion: 5
-      });
-
-      // Escuchar cambios en la clave "cohetes_activados"
-      supabase
+      // Escuchar activación de cohetes en tiempo real
+      supabaseClient
         .channel('cohetes')
         .on('postgres_changes', {
           event: 'UPDATE',
           schema: 'public',
           table: 'configuracion',
           filter: 'clave=eq.cohetes_activados'
-        }, (payload) => {
-          if (payload.new.valore === true || payload.new.valore === "true") {
-            fireworks.start();
+        }, async (payload) => {
+          const valor = payload.new.valore;
+          if (valor === true || valor === "true") {
+            const gif = document.getElementById('cohetesGif');
+            gif.style.display = 'block';
+
             setTimeout(() => {
-              fireworks.stop();
-              supabase.from('configuracion')
+              gif.style.display = 'none';
+              supabaseClient
+                .from('configuracion')
                 .update({ valore: false })
                 .eq('clave', 'cohetes_activados');
-            }, 8000);
+            }, 10000);
           }
         })
         .subscribe();
