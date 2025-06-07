@@ -1084,15 +1084,16 @@ async function guardarGanador() {
   const cedula   = document.getElementById('ganadorCedula').value.trim();
   const cartones = document.getElementById('ganadorCartones').value.trim();
   const premio   = document.getElementById('ganadorPremio').value.trim();
+  const telefono  = document.getElementById('ganadorTelefono').value.trim();
   const fecha    = document.getElementById('ganadorFecha').value.trim(); // ahora manual
 
-  if (!nombre || !cedula || !cartones || !premio || !fecha) {
+  if (!nombre || !cedula || !cartones || !premio || !telefono|| !fecha) {
     return alert("Completa todos los campos del ganador.");
   }
 
   const { error } = await supabase
     .from('ganadores')
-    .insert([{ nombre, cedula, cartones, premio, fecha }]);
+    .insert([{ nombre, cedula, cartones, premio, telefono, fecha }]);
 
   if (error) {
     console.error(error);
@@ -1136,6 +1137,7 @@ async function cargarGanadores() {
         <th>Cédula</th>
         <th>Cartones</th>
         <th>Premio</th>
+        <th>Telefono</th>
         <th>Fecha</th>
       </tr>
     </thead>
@@ -1146,6 +1148,7 @@ async function cargarGanadores() {
           <td>${g.cedula}</td>
           <td>${g.cartones}</td>
           <td>${g.premio}</td>
+          <td>${g.telefono}</td>
           <td>${g.fecha || ''}</td>
         </tr>
       `).join('')}
