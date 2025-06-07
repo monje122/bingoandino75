@@ -83,7 +83,7 @@
     cargarVideo();
 
     // Configuración de fireworks
-    const fireworks = new Fireworks(document.getElementById('cohetesCanvas'), {
+    const fireworks = new window.Fireworks(document.getElementById('cohetesCanvas'), {
       hue: { min: 0, max: 360 },
       delay: { min: 15, max: 30 },
       rocketsPoint: 50,
@@ -98,26 +98,24 @@
 
     // Suscripción en tiempo real a cambios en Supabase
     supabaseClient
-      .channel('cohetes')
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'configuracion',
-        filter: 'clave=eq.cohetes_activados'
-      }, payload => {
-        const nuevoValor = payload.new.valore;
-        if (nuevoValor === true || nuevoValor === "true") {
-          fireworks.start();
-          setTimeout(() => {
-            fireworks.stop();
-            supabaseClient
-              .from('configuracion')
-              .update({ valore: false })
-              .eq('clave', 'cohetes_activados');
-          }, 10000);
-        }
-      })
-      .subscribe();
-  </script>
-</body>
-</html>
+  .channel('cohetes')
+  .on('postgres_changes', {
+    event: 'UPDATE',
+    schema: 'public',
+    table: 'configuracion',
+    filter: 'clave=eq.cohetes_activados'
+  }, payload => {
+    if (payload.new.valore === true || payload.new.valore === "true") {
+      fireworks.start();
+
+      setTimeout(() => {
+        fireworks.stop();
+        supabaseClient
+          .from('configuracion')
+          .update({ valore: false })
+          .eq('clave', 'cohetes_activados');
+      }, 10000);
+    }
+  })
+  .subscribe();
+
