@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://bingoandino75.com/sitemap.xml
