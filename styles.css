@@ -159,6 +159,7 @@ button:hover {
 
 .btn-aprobar { color: #28a745; }   /* ✅ verde  */
 .btn-rechazar { color: #dc3545; }  /* ❌ rojo   */
+.btn-eliminar { color: #ff5722; }
 
 #btnContinuarCartones {
   padding: 10px 20px;
