@@ -410,16 +410,20 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
       <td>
         <button class="btn-accion btn-aprobar" title="Aprobar">&#x2705;</button>
         <button class="btn-accion btn-rechazar" title="Rechazar">&#x274C;</button>
+        <button class="btn-accion btn-eliminar" title="Eliminar">&#x1F5D1;</button>
       </td>
     `;
 
     // ===== acciones =====
     const btnAprobar  = tr.querySelector('.btn-aprobar');
     const btnRechazar = tr.querySelector('.btn-rechazar');
+    const btnEliminar = tr.querySelector('.btn-eliminar');
+
 
     btnAprobar.onclick = () => aprobarInscripcion(item.id, tr);
     btnRechazar.onclick = () => rechazarInscripcion(item, tr);
-
+    btnEliminar.onclick = () => eliminarInscripcion(item, tr);
+    
     // Si la inscripción ya fue procesada, inhabilitamos los botones
     if (item.estado === 'aprobado') {
       btnAprobar.disabled = true;
@@ -1213,4 +1217,71 @@ async function activarCohetes() {
   } else {
     alert("¡Cohetes activados!");
   }
+}
+async function eliminarInscripcion(item, fila) {
+  const confirmar = confirm('¿Eliminar esta inscripción y liberar cartones?');
+
+  if (!confirmar) return;
+
+  try {
+    // 1. Eliminar cartones
+    if (item.cartones?.length) {
+      await supabase.from('cartones').delete().in('numero', item.cartones);
+    }
+
+    // 2. Eliminar comprobante del bucket
+    if (item.comprobante) {
+      const partes = item.comprobante.split('/');
+      const nombreArchivo = partes.pop();
+      await supabase.storage.from('comprobantes').remove([nombreArchivo]);
+    }
+
+    // 3. Eliminar inscripción
+    await supabase.from('inscripciones').delete().eq('id', item.id);
+
+    // 4. Remover visualmente del panel admin
+    fila.remove();
+
+    // 5. Quitar de lista de aprobados (admin)
+    const listaAdmin = document.getElementById('listaAprobados');
+    if (listaAdmin) {
+      listaAdmin.querySelectorAll('tr').forEach(tr => {
+        const celdas = tr.querySelectorAll('td');
+        if (celdas.length && celdas[1].textContent === item.cedula) {
+          tr.remove();
+        }
+      });
+    }
+
+    // 6. Quitar de la vista pública
+    const listaPublica = document.getElementById('contenedor-aprobados');
+    if (listaPublica) {
+      listaPublica.querySelectorAll('tr').forEach(tr => {
+        const celdas = tr.querySelectorAll('td');
+        if (celdas.length && celdas[1].textContent === item.cedula) {
+          tr.remove();
+        }
+      });
+    }
+
+    alert('Inscripción eliminada correctamente.');
+  } catch (err) {
+    console.error(err);
+    alert('Error al eliminar inscripción.');
+  }
+}
+function ordenarInscripcionesPorNombre() {
+  const tabla = document.querySelector('#tabla-comprobantes tbody');
+  const filas = Array.from(tabla.rows);
+
+  // Ordena por nombre (columna 0)
+  filas.sort((a, b) => {
+    const nombreA = a.cells[0].textContent.trim().toLowerCase();
+    const nombreB = b.cells[0].textContent.trim().toLowerCase();
+    return nombreA.localeCompare(nombreB);
+  });
+
+  // Limpia la tabla y vuelve a insertar las filas ordenadas
+  tabla.innerHTML = '';
+  filas.forEach(fila => tabla.appendChild(fila));
 }
