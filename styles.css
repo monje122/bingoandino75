@@ -273,3 +273,19 @@ body {
   background-repeat: no-repeat;
   font-family: sans-serif;
 }
+.estado-circulo {
+  display: inline-block;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  margin-right: 1px;
+  vertical-align: middle;
+}
+
+.estado-circulo.rojo {
+  background-color: red;
+}
+
+.estado-circulo.verde {
+  background-color: green;
+}
