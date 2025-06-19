@@ -408,6 +408,7 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
             <img src="${item.comprobante}" alt="Comp.">
           </a></td>
       <td>
+        <span class="estado-circulo ${item.estado === 'aprobado' ? 'verde' : 'rojo'}"></span>
         <button class="btn-accion btn-aprobar" title="Aprobar">&#x2705;</button>
         <button class="btn-accion btn-rechazar" title="Rechazar">&#x274C;</button>
         <button class="btn-accion btn-eliminar" title="Eliminar">&#x1F5D1;</button>
@@ -559,6 +560,8 @@ async function aprobarInscripcion(id, fila) {
     return alert('No se pudo aprobar');
   }
   fila.querySelectorAll('button').forEach(b => (b.disabled = true));
+  const circulo = fila.querySelector('.estado-circulo');
+  if (circulo) circulo.classList.replace('rojo', 'verde');
   alert('¡Inscripción aprobada!');
 }
 
@@ -1284,4 +1287,22 @@ function ordenarInscripcionesPorNombre() {
   // Limpia la tabla y vuelve a insertar las filas ordenadas
   tabla.innerHTML = '';
   filas.forEach(fila => tabla.appendChild(fila));
+}
+let ordenCedulaAscendente = true;
+
+function ordenarPorCedula() {
+  const tabla = document.querySelector('#tabla-comprobantes tbody');
+  const filas = Array.from(tabla.rows);
+
+  filas.sort((a, b) => {
+    const cedulaA = parseInt(a.cells[2].textContent.trim());
+    const cedulaB = parseInt(b.cells[2].textContent.trim());
+
+    return ordenCedulaAscendente ? cedulaA - cedulaB : cedulaB - cedulaA;
+  });
+
+  tabla.innerHTML = '';
+  filas.forEach(fila => tabla.appendChild(fila));
+
+  ordenCedulaAscendente = !ordenCedulaAscendente;
 }
