@@ -220,63 +220,77 @@ function actualizarMonto() {
 
 // Subir comprobante y guardar en Supabase
 async function enviarComprobante() {
-   if (!usuario.nombre || !usuario.telefono || !usuario.cedula ) {
-    return alert('Debes completar primero los datos de inscripción');
+  const boton = document.getElementById('btnEnviarComprobante');
+  const textoOriginal = boton.textContent;
+
+  boton.disabled = true;
+  boton.textContent = 'Cargando comprobante...';
+
+  try {
+    // Validación
+    if (!usuario.nombre || !usuario.telefono || !usuario.cedula) {
+      throw new Error('Debes completar primero los datos de inscripción');
+    }
+
+    const archivo = document.getElementById('comprobante').files[0];
+    if (!archivo) {
+      throw new Error('Debes subir un comprobante');
+    }
+
+    const nombreArchivo = `${usuario.cedula}-${Date.now()}.jpg`;
+    const { error: errorUpload } = await supabase.storage.from('comprobantes').upload(nombreArchivo, archivo);
+    if (errorUpload) {
+      throw new Error('Error subiendo imagen');
+    }
+
+    const urlPublica = `${supabaseUrl}/storage/v1/object/public/comprobantes/${nombreArchivo}`;
+
+    const { data: cartonesExistentes, error: errorVerificacion } = await supabase
+      .from('cartones')
+      .select('numero')
+      .in('numero', usuario.cartones);
+
+    if (errorVerificacion) {
+      throw new Error('Error al verificar disponibilidad. Intenta de nuevo.');
+    }
+
+    if (cartonesExistentes.length > 0) {
+      const ocupados = cartonesExistentes.map(c => c.numero).join(', ');
+      throw new Error(`Los cartones ${ocupados} ya fueron tomados. Por favor selecciona otros.`);
+    }
+
+    const { error: errorInsert } = await supabase.from('inscripciones').insert([{
+      nombre: usuario.nombre,
+      telefono: usuario.telefono,
+      cedula: usuario.cedula,
+      referido: usuario.referido,
+      cartones: usuario.cartones,
+      comprobante: urlPublica
+    }]);
+
+    if (errorInsert) {
+      throw new Error('Error guardando inscripción');
+    }
+
+    for (const num of usuario.cartones) {
+      const { error: errInsertCarton } = await supabase.from('cartones').insert([{ numero: num }]);
+      if (errInsertCarton) {
+        throw new Error(`Error: El cartón ${num} ya fue ocupado por otra persona.`);
+      }
+    }
+
+    alert('Inscripción y comprobante enviados con éxito');
+    location.reload();
+    return; // ⛔️ evita que pase al finally
+
+  } catch (err) {
+    console.error(err);
+    alert(err.message || 'Ocurrió un error inesperado');
+  } finally {
+    boton.disabled = false;
+    boton.textContent = textoOriginal;
   }
-  const archivo = document.getElementById('comprobante').files[0];
-  if (!archivo) return alert('Debes subir un comprobante');
-  const nombreArchivo = `${usuario.cedula}-${Date.now()}.jpg`;
-  const { data, error } = await supabase.storage.from('comprobantes').upload(nombreArchivo, archivo);
-  if (error) return alert('Error subiendo imagen');
-  const urlPublica = `${supabaseUrl}/storage/v1/object/public/comprobantes/${nombreArchivo}`;
-  
-  // Verificar si alguno de los cartones ya está ocupado
-const { data: cartonesExistentes, error: errorVerificacion } = await supabase
-  .from('cartones')
-  .select('numero')
-  .in('numero', usuario.cartones);
-
-if (errorVerificacion) {
-  console.error('Error al verificar cartones:', errorVerificacion);
-  return alert('Error al verificar disponibilidad. Intenta de nuevo.');
 }
-
-if (cartonesExistentes.length > 0) {
-  const ocupados = cartonesExistentes.map(c => c.numero).join(', ');
-  return alert(`Los cartones ${ocupados} ya fueron tomados. Por favor selecciona otros.`);
-}
-
-// Guardar inscripción en Supabase
-  const { error: errorInsert } = await supabase.from('inscripciones').insert([{
-    nombre: usuario.nombre,
-    telefono: usuario.telefono,
-    cedula: usuario.cedula,
-    referido: usuario.referido,
-    cartones: usuario.cartones,
-    comprobante: urlPublica
-  }]);
-
-  if (errorInsert) {
-    console.error(errorInsert);
-    return alert('Error guardando inscripción');
-  }
-
-  // Marcar cartones como ocupados
-for (const num of usuario.cartones) {
-  const { error: errInsertCarton } = await supabase
-    .from('cartones')
-    .insert([{ numero: num }]);
-
-  if (errInsertCarton) {
-    console.error(errInsertCarton);
-    return alert(`Error: El cartón ${num} ya fue ocupado por otra persona.`);
-  }
-}
-  alert('Inscripción y comprobante enviados con éxito');
-  location.reload();
-
-   }
-
 // Consultar cartones por cédula
 async function consultarCartones() {
   const cedula = document.getElementById('consulta-cedula').value;
@@ -707,13 +721,21 @@ async function subirCartones() {
   }, 5000); // 5 segundos
 }
 async function borrarCartones() {
+  const claveCorrecta = "1234admin"; // puedes cambiarla por una más segura
+  const claveIngresada = prompt("Ingrese la clave de seguridad para borrar todos los cartones:");
+
+  if (claveIngresada !== claveCorrecta) {
+    alert("Clave incorrecta. No se borraron los cartones.");
+    return;
+  }
+
   const status = document.getElementById('deleteStatus');
   status.innerHTML = 'Cargando lista de imágenes...';
 
-  // Paso 1: Obtener la lista de imágenes en el bucket 'cartones'
+  // Paso 1: Obtener la lista de imágenes
   const { data: list, error: listError } = await supabase.storage
     .from('cartones')
-    .list('', { limit: 1000 }); // Aumenta si hay más de 1000
+    .list('', { limit: 1000 });
 
   if (listError) {
     status.innerHTML = `<p style="color:red;">Error listando imágenes: ${listError.message}</p>`;
@@ -725,10 +747,9 @@ async function borrarCartones() {
     return;
   }
 
-  // Paso 2: Construir lista de nombres de archivo
+  // Paso 2: Borrar
   const fileNames = list.map(file => file.name);
 
-  // Paso 3: Eliminar imágenes
   const { error: deleteError } = await supabase.storage
     .from('cartones')
     .remove(fileNames);
@@ -739,7 +760,6 @@ async function borrarCartones() {
     status.innerHTML = `<p style="color:green;">Se borraron ${fileNames.length} imágenes exitosamente.</p>`;
   }
 
-  // (Opcional) Ocultar mensaje luego de 5 segundos
   setTimeout(() => {
     status.innerHTML = '';
   }, 5000);
