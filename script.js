@@ -913,33 +913,50 @@ async function cargarListaAprobadosSeccion() {
     return;
   }
 
-  const tabla = document.createElement('table');
-  tabla.style.width = '100%';
-  tabla.style.borderCollapse = 'collapse';
-  tabla.innerHTML = `
-    <thead>
-      <tr>
-        <th>Nombre</th>
-        <th>Cédula</th>
-        <th>Cartones</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
+ const tabla = document.createElement('table');
+tabla.style.width = '100%';
+tabla.style.borderCollapse = 'collapse';
+tabla.innerHTML = `
+  <thead>
+    <tr>
+      <th>Cartón</th>
+      <th>Nombre</th>
+      <th>Cédula</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+`;
 
-  const tbody = tabla.querySelector('tbody');
+const tbody = tabla.querySelector('tbody');
 
-  data.forEach(item => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${item.nombre}</td>
-      <td>${item.cedula}</td>
-      <td>${item.cartones.join(', ')}</td>
-    `;
-    tbody.appendChild(tr);
+// Generar filas por cada cartón
+let filas = [];
+
+data.forEach(item => {
+  item.cartones.forEach(carton => {
+    filas.push({
+      carton,
+      nombre: item.nombre,
+      cedula: item.cedula
+    });
   });
+});
 
-  contenedor.appendChild(tabla);
+// Ordenar por número de cartón
+filas.sort((a, b) => a.carton - b.carton);
+
+// Insertar en tabla
+filas.forEach(item => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${item.carton}</td>
+    <td>${item.nombre}</td>
+    <td>${item.cedula}</td>
+  `;
+  tbody.appendChild(tr);
+});
+
+contenedor.appendChild(tabla);
 }
 
 function actualizarHoraVenezuela() {
