@@ -231,6 +231,13 @@ async function enviarComprobante() {
     if (!usuario.nombre || !usuario.telefono || !usuario.cedula) {
       throw new Error('Debes completar primero los datos de inscripción');
     }
+    
+    
+    // Validación de los 4 dígitos
+    const referencia4dig = document.getElementById('referencia4dig').value.trim();
+    if (!/^\d{4}$/.test(referencia4dig)) {
+      throw new Error('Debes ingresar los últimos 4 dígitos de la referencia bancaria.');
+    }
 
     const archivo = document.getElementById('comprobante').files[0];
     if (!archivo) {
@@ -258,15 +265,16 @@ async function enviarComprobante() {
       const ocupados = cartonesExistentes.map(c => c.numero).join(', ');
       throw new Error(`Los cartones ${ocupados} ya fueron tomados. Por favor selecciona otros.`);
     }
-
+     
     const { error: errorInsert } = await supabase.from('inscripciones').insert([{
       nombre: usuario.nombre,
       telefono: usuario.telefono,
       cedula: usuario.cedula,
       referido: usuario.referido,
       cartones: usuario.cartones,
+      referencia4dig: referencia4dig,
       comprobante: urlPublica
-    }]);
+       }]);
 
     if (errorInsert) {
       throw new Error('Error guardando inscripción');
@@ -418,6 +426,7 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
       <td>${item.cedula}</td>
       <td>${item.referido}</td>
        <td>${item.cartones.join(', ')}</td>
+       <td>${item.referencia4dig || ''}</td>
       <td><a href="${item.comprobante}" target="_blank">
             <img src="${item.comprobante}" alt="Comp.">
           </a></td>
@@ -1342,4 +1351,25 @@ function ordenarPorCedula() {
   filas.forEach(fila => tabla.appendChild(fila));
 
   ordenCedulaAscendente = !ordenCedulaAscendente;
+}
+let ordenReferenciaAscendente = false;
+function ordenarPorReferencia() {
+  const tabla = document.querySelector('#tabla-comprobantes tbody');
+  const filas = Array.from(tabla.rows);
+
+  filas.sort((a, b) => {
+    // Tomamos el valor de la columna de referencia (ajusta el índice según el orden real de tus columnas)
+    const refA = a.cells[5].textContent.trim(); // Cambia el número si tu columna no es la 6ta
+    const refB = b.cells[5].textContent.trim();
+    // Convierte a número para comparar
+    const numA = parseInt(refA) || 0;
+    const numB = parseInt(refB) || 0;
+
+    return ordenReferenciaAscendente ? numA - numB : numB - numA;
+  });
+
+  tabla.innerHTML = '';
+  filas.forEach(fila => tabla.appendChild(fila));
+
+  ordenReferenciaAscendente = !ordenReferenciaAscendente; // Alterna orden para cada clic
 }
