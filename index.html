@@ -119,6 +119,12 @@
     <p>Cédula: 19353708</p>
     <p>Monto a pagar: <span id="monto-pago"></span> Bs</p>
     <input type="file" accept="image/*" id="comprobante">
+    <input type="text" 
+       id="referencia4dig"
+       maxlength="4"
+       placeholder="Últimos 4 dígitos de la referencia"
+       style="margin-top: 10px;" />
+
    <button id="btnEnviarComprobante" onclick="enviarComprobante()">Enviar comprobante</button>
 
 
@@ -161,6 +167,8 @@
     <h3>Inscripciones pendientes</h3>
 <button onclick="ordenarInscripcionesPorNombre()">🔤 Ordenar alfabéticamente</button>
 <button onclick="ordenarPorCedula()">🔢 Ordenar por cédula</button>
+<button onclick="ordenarPorReferencia()">🔢 Ordenar por referencia</button>
+
     <table id="tabla-comprobantes">
       <thead>
         <tr>
@@ -169,6 +177,7 @@
           <th>Cédula</th>
            <th>Referido</th>
           <th># Cartones</th>
+          <th>Referencia</th>
           <th>Comprobante</th>
           <th>Acción</th>
         </tr>
