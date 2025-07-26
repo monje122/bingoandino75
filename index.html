@@ -290,25 +290,6 @@
   </a>
 </footer>
 <script>
-// Desactiva clic derecho
-document.addEventListener('contextmenu', function(e) {
-  e.preventDefault();
-  alert("🚫 ¡Clic derecho deshabilitado!\nEste sistema está protegido.");
-});
-
-// Desactiva teclas comunes de inspección
-document.addEventListener('keydown', function(e) {
-  if (
-    e.key === "F12" ||
-    (e.ctrlKey && e.shiftKey && ["I", "J", "C"].includes(e.key.toUpperCase())) ||
-    (e.ctrlKey && e.key.toLowerCase() === "u")
-  ) {
-    e.preventDefault();
-    alert("⛔ Acción bloqueada.\nEste sistema no permite inspección.");
-    return false;
-  }
-});
-</script>
 
 </body>
 </html>
