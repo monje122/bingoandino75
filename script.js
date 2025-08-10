@@ -222,50 +222,53 @@ function actualizarMonto() {
 async function enviarComprobante() {
   const boton = document.getElementById('btnEnviarComprobante');
   const textoOriginal = boton.textContent;
-
   boton.disabled = true;
   boton.textContent = 'Cargando comprobante...';
 
   try {
-    // Validación
+    // Validaciones básicas...
     if (!usuario.nombre || !usuario.telefono || !usuario.cedula) {
       throw new Error('Debes completar primero los datos de inscripción');
     }
-    
-    
-    // Validación de los 4 dígitos
+
     const referencia4dig = document.getElementById('referencia4dig').value.trim();
     if (!/^\d{4}$/.test(referencia4dig)) {
       throw new Error('Debes ingresar los últimos 4 dígitos de la referencia bancaria.');
     }
 
     const archivo = document.getElementById('comprobante').files[0];
-    if (!archivo) {
-      throw new Error('Debes subir un comprobante');
-    }
+    if (!archivo) throw new Error('Debes subir un comprobante');
 
-    const nombreArchivo = `${usuario.cedula}-${Date.now()}.jpg`;
-    const { error: errorUpload } = await supabase.storage.from('comprobantes').upload(nombreArchivo, archivo);
-    if (errorUpload) {
-      throw new Error('Error subiendo imagen');
-    }
+    // Subir comprobante
+    const ext = archivo.name.split('.').pop();
+    const nombreArchivo = `${usuario.cedula}-${Date.now()}.${ext}`;
+    const { error: errorUpload } = await supabase.storage
+      .from('comprobantes')
+      .upload(nombreArchivo, archivo);
+    if (errorUpload) throw new Error('Error subiendo imagen');
 
     const urlPublica = `${supabaseUrl}/storage/v1/object/public/comprobantes/${nombreArchivo}`;
 
-    const { data: cartonesExistentes, error: errorVerificacion } = await supabase
+    // -------- PASO CLAVE: reservar cartones primero --------
+    // Intento insertar TODOS los cartones de una
+    // (si hay uno duplicado, Postgres lanza conflicto y NO se crea la inscripción)
+    const rows = usuario.cartones.map(n => ({ numero: n }));
+    const { error: errInsertaCartones } = await supabase
       .from('cartones')
-      .select('numero')
-      .in('numero', usuario.cartones);
+      .insert(rows);  // requiere UNIQUE en cartones.numero
 
-    if (errorVerificacion) {
-      throw new Error('Error al verificar disponibilidad. Intenta de nuevo.');
+    if (errInsertaCartones) {
+      // Conflicto típico: errInsertaCartones.code === '23505'
+      // (según versión puede venir en errInsertaCartones.details o message)
+      alert('Uno o más cartones ya fueron tomados por otra persona. Elige otros, por favor.');
+      // UX: volver a selección de cartones y refrescar estado
+      usuario.cartones = [];
+      mostrarVentana('cartones');
+      await cargarCartones();
+      return;
     }
 
-    if (cartonesExistentes.length > 0) {
-      const ocupados = cartonesExistentes.map(c => c.numero).join(', ');
-      throw new Error(`Los cartones ${ocupados} ya fueron tomados. Por favor selecciona otros.`);
-    }
-     
+    // Si llegamos aquí, los cartones SON NUESTROS ⇒ ahora guardamos inscripción
     const { error: errorInsert } = await supabase.from('inscripciones').insert([{
       nombre: usuario.nombre,
       telefono: usuario.telefono,
@@ -273,27 +276,24 @@ async function enviarComprobante() {
       referido: usuario.referido,
       cartones: usuario.cartones,
       referencia4dig: referencia4dig,
-      comprobante: urlPublica
-       }]);
+      comprobante: urlPublica,
+      estado: 'pendiente'
+    }]);
 
     if (errorInsert) {
-      throw new Error('Error guardando inscripción');
-    }
-
-    for (const num of usuario.cartones) {
-      const { error: errInsertCarton } = await supabase.from('cartones').insert([{ numero: num }]);
-      if (errInsertCarton) {
-        throw new Error(`Error: El cartón ${num} ya fue ocupado por otra persona.`);
-      }
+      // Si falló la inscripción, liberamos cartones recién tomados para no dejarlos “fantasma”
+      await supabase.from('cartones').delete().in('numero', usuario.cartones);
+      throw new Error('Error guardando la inscripción');
     }
 
     alert('Inscripción y comprobante enviados con éxito');
-    location.reload();
-    return; // ⛔️ evita que pase al finally
-
+    location.reload(); // o redirige a “pago” si quieres
   } catch (err) {
     console.error(err);
     alert(err.message || 'Ocurrió un error inesperado');
+    // En caso de error, te asegurás de que el usuario NO vaya al admin,
+    // y lo regresas a selección si venía de ahí:
+    // (opcional) mostrarVentana('cartones');
   } finally {
     boton.disabled = false;
     boton.textContent = textoOriginal;
