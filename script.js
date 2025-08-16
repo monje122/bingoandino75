@@ -114,10 +114,17 @@ async function mostrarVentana(id) {
 }
   }
  if (id === 'pago') {
-    
-     if (modoCartones === 'fijo' && usuario.cartones.length !== cantidadFijaCartones) {
-    return alert(`Debes elegir exactamente ${cantidadFijaCartones} cartones antes de continuar.`);
-}
+    if (modoCartones === 'fijo') {
+      if (usuario.cartones.length !== cantidadFijaCartones) {
+        alert(`Debes elegir exactamente ${cantidadFijaCartones} cartones antes de continuar.`);
+        return;
+      }
+    } else { // modo libre
+      if (usuario.cartones.length !== cantidadPermitida) {
+        alert(`Debes elegir exactamente ${cantidadPermitida} cartones antes de continuar.`);
+        return;
+      }
+    }
   }
   // Ahora mostramos la ventana deseada
   document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
