@@ -1392,23 +1392,35 @@ function ordenarPorReferencia() {
 
   ordenReferenciaAscendente = !ordenReferenciaAscendente; // Alterna orden para cada clic
 }
-// Construye un enlace wa.me válido con soporte para cualquier país
-// - Limpia caracteres extraños
-// - Si no incluye + y código de país, asume que el número es local
-//   y tú puedes decidir si anteponer el código de tu país por defecto
+// Link universal a WhatsApp con heurística para Venezuela
 function buildWhatsAppLink(rawPhone, presetMsg = '') {
   if (!rawPhone) return null;
 
-  // Limpia todo excepto dígitos y el signo +
-  let digits = String(rawPhone).trim().replace(/[^\d+]/g, '');
+  // 1) Normaliza: quita espacios, guiones, puntos, paréntesis
+  let s = String(rawPhone).trim().replace(/[\s\-\.\(\)]/g, '');
 
-  // Si el número no empieza con "+" y quieres asumir tu país base (opcional)
-  // Ejemplo: para Venezuela:
-  // if (!digits.startsWith('+')) digits = '+58' + digits;
+  // 2) Convierte "00" internacional a "+"
+  if (s.startsWith('00')) s = '+' + s.slice(2);
 
-  // Elimina el "+" para wa.me (wa.me no acepta el signo)
-  digits = digits.replace(/^\+/, '');
+  // 3) Si NO trae + (formato local), intenta detectar Venezuela móvil
+  if (!s.startsWith('+')) {
+    // Solo dígitos para validar prefijos
+    const digits = s.replace(/\D+/g, '');
+    // Prefijos VE móviles: 412, 414, 416, 424, 426 (con o sin 0 inicial)
+    const m = /^(0?)(412|414|416|424|426)(\d{7})$/.exec(digits);
+    if (m) {
+      // Fuerza internacional: +58 + prefijo + 7 dígitos
+      s = '+58' + m[2] + m[3];
+    } else {
+      // (Opcional) Si quieres un país por defecto cuando no sea VE:
+      // s = '+58' + digits; // cambia 58 por tu país base o comenta para dejarlo tal cual
+      s = '+' + digits; // intenta internacional genérico
+    }
+  }
+
+  // 4) wa.me no acepta el "+" en el path
+  const waNumber = s.replace(/^\+/, '');
 
   const text = encodeURIComponent(presetMsg || 'Hola, te escribo por el bingo.');
-  return `https://wa.me/${digits}?text=${text}`;
+  return `https://wa.me/${waNumber}?text=${text}`;
 }
