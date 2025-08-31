@@ -400,7 +400,13 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
       <td style="border: 1px solid #ccc; padding: 8px;">${item.nombre}</td>
       <td style="border: 1px solid #ccc; padding: 8px;">${item.cedula}</td>
       <td style="border: 1px solid #ccc; padding: 8px;">${item.referido}</td>
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.telefono}</td>
+      <td style="border: 1px solid #ccc; padding: 8px;">
+  <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, tu inscripción fue aprobada.`)}"
+     target="_blank" rel="noopener">
+    ${item.telefono}
+  </a>
+</td>
+
       <td style="border: 1px solid #ccc; padding: 8px;">${item.cartones.join(', ')}</td>
     `;
     tbody.appendChild(tr);
@@ -429,7 +435,13 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
 
     tr.innerHTML = `
       <td>${item.nombre}</td>
-      <td>${item.telefono}</td>
+      <td>
+  <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, te contacto del bingo.`)}"
+     target="_blank" rel="noopener">
+    ${item.telefono}
+  </a>
+</td>
+
       <td>${item.cedula}</td>
       <td>${item.referido}</td>
        <td>${item.cartones.join(', ')}</td>
@@ -1379,4 +1391,24 @@ function ordenarPorReferencia() {
   filas.forEach(fila => tabla.appendChild(fila));
 
   ordenReferenciaAscendente = !ordenReferenciaAscendente; // Alterna orden para cada clic
+}
+// Construye un enlace wa.me válido con soporte para cualquier país
+// - Limpia caracteres extraños
+// - Si no incluye + y código de país, asume que el número es local
+//   y tú puedes decidir si anteponer el código de tu país por defecto
+function buildWhatsAppLink(rawPhone, presetMsg = '') {
+  if (!rawPhone) return null;
+
+  // Limpia todo excepto dígitos y el signo +
+  let digits = String(rawPhone).trim().replace(/[^\d+]/g, '');
+
+  // Si el número no empieza con "+" y quieres asumir tu país base (opcional)
+  // Ejemplo: para Venezuela:
+  // if (!digits.startsWith('+')) digits = '+58' + digits;
+
+  // Elimina el "+" para wa.me (wa.me no acepta el signo)
+  digits = digits.replace(/^\+/, '');
+
+  const text = encodeURIComponent(presetMsg || 'Hola, te escribo por el bingo.');
+  return `https://wa.me/${digits}?text=${text}`;
 }
