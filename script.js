@@ -1421,6 +1421,6 @@ function buildWhatsAppLink(rawPhone, presetMsg = '') {
   // 4) wa.me no acepta el "+" en el path
   const waNumber = s.replace(/^\+/, '');
 
-  const text = encodeURIComponent(presetMsg || 'Hola, te escribo por el bingo.');
+  const text = encodeURIComponent(presetMsg || 'Hola, te escribo de parte del equipo de bingoandino75.');
   return `https://wa.me/${waNumber}?text=${text}`;
 }
