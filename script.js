@@ -436,7 +436,7 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
     tr.innerHTML = `
       <td>${item.nombre}</td>
       <td>
-  <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, te contacto del bingo.`)}"
+  <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, te escribo de parte del equipo de bingoandino75.`)}"
      target="_blank" rel="noopener">
     ${item.telefono}
   </a>
