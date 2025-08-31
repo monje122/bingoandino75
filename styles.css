@@ -289,3 +289,13 @@ body {
 .estado-circulo.verde {
   background-color: green;
 }
+a[href*="wa.me"] {
+  color: #25D366;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+a[href*="wa.me"]:hover {
+  text-decoration: underline;
+  color: #128C7E;
+}
