@@ -32,12 +32,9 @@ async function obtenerTotalCartones() {
     .eq('clave', 'total_cartones')
     .single();
 
-  if (!error && data) {
-    totalCartones = parseInt(data.valore, 10) || 0;
-  } else {
-    totalCartones = 0; // fallback seguro
-  }
+  totalCartones = (!error && data) ? parseInt(data.valore, 10) || 0 : 0;
 }
+
 async function cargarPrecioPorCarton() {
   const { data, error } = await supabase
     .from('configuracion')
@@ -603,20 +600,55 @@ document.getElementById('abrirVentasBtn').addEventListener('click', async () => 
 });
 // Aprobar = simplemente marcar la inscripción como "aprobado"
 async function aprobarInscripcion(id, fila) {
-  const { error } = await supabase
-    .from('inscripciones')
-    .update({ estado: 'aprobado' })
-    .eq('id', id);
+  try {
+    // 1. Buscar el comprobante asociado a la inscripción
+    const { data, error: fetchError } = await supabase
+      .from('inscripciones')
+      .select('comprobante')
+      .eq('id', id)
+      .single();
 
-  if (error) {
-    console.error(error);
-    return alert('No se pudo aprobar');
+    if (fetchError || !data) {
+      alert('No se pudo obtener el comprobante para borrar.');
+      console.error(fetchError);
+      return;
+    }
+
+    // 2. Aprobar la inscripción
+    const { error: updateError } = await supabase
+      .from('inscripciones')
+      .update({ estado: 'aprobado' })
+      .eq('id', id);
+
+    if (updateError) {
+      console.error(updateError);
+      return alert('No se pudo aprobar');
+    }
+
+    // 3. Eliminar el comprobante del bucket
+    const nombreArchivo = data.comprobante.split('/').pop(); // solo el nombre del archivo
+    const { error: deleteError } = await supabase.storage
+      .from('comprobantes')
+      .remove([nombreArchivo]);
+
+    if (deleteError) {
+      console.warn('No se pudo eliminar el comprobante del bucket:', deleteError);
+    } else {
+      console.log(`Comprobante ${nombreArchivo} eliminado correctamente`);
+    }
+
+    // 4. Actualizar la UI
+    fila.querySelectorAll('button').forEach(b => (b.disabled = true));
+    const circulo = fila.querySelector('.estado-circulo');
+    if (circulo) circulo.classList.replace('rojo', 'verde');
+    alert('¡Inscripción aprobada y comprobante eliminado!');
+  } catch (err) {
+    console.error('Error al aprobar inscripción y eliminar comprobante:', err);
+    alert('Ocurrió un error al procesar la aprobación.');
   }
-  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
-  const circulo = fila.querySelector('.estado-circulo');
-  if (circulo) circulo.classList.replace('rojo', 'verde');
-  alert('¡Inscripción aprobada!');
 }
+
+
 // Rechazar = borrar los cartones ocupados y marcar "rechazado"
 async function rechazarInscripcion(item, fila) {
   const confirma = confirm('¿Seguro que deseas rechazar y liberar cartones?');
@@ -816,7 +848,7 @@ function mostrarSeccion(id) {
   }
 }
 async function guardarNuevoTotal() {
-  const nuevoTotal = parseInt(document.getElementById("nuevoTotalCartones").value);
+  const nuevoTotal = parseInt(document.getElementById("nuevoTotalCartones").value, 10);
 
   if (isNaN(nuevoTotal) || nuevoTotal < 1) {
     document.getElementById("estadoTotalCartones").textContent = "Número inválido.";
@@ -825,17 +857,22 @@ async function guardarNuevoTotal() {
 
   const { error } = await supabase
     .from('configuracion')
-    .update({ total_cartones: nuevoTotal })
-    .eq('clave', 1);
+    .update({
+      valore: String(nuevoTotal),         // usado por todo el código
+      total_cartones: nuevoTotal          // opcional, por compatibilidad
+    })
+    .eq('clave', 'total_cartones');
 
-  if (!error) {
+  if (error) {
+    document.getElementById("estadoTotalCartones").textContent = "Error al actualizar.";
+    console.error(error);
+  } else {
     document.getElementById("estadoTotalCartones").textContent = "¡Total actualizado!";
     totalCartones = nuevoTotal;
-    generarCartones(); // Regenera los cartones
-  } else {
-    document.getElementById("estadoTotalCartones").textContent = "Error al actualizar.";
   }
 }
+
+
 async function contarCartonesVendidos() {
   const { count, error } = await supabase
     .from('cartones')
