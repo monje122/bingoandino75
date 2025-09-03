@@ -849,30 +849,29 @@ function mostrarSeccion(id) {
 }
 async function guardarNuevoTotal() {
   const nuevoTotal = parseInt(document.getElementById("nuevoTotalCartones").value, 10);
+  const estado = document.getElementById("estadoTotalCartones");
 
   if (isNaN(nuevoTotal) || nuevoTotal < 1) {
-    document.getElementById("estadoTotalCartones").textContent = "Número inválido.";
+    estado.textContent = "Número inválido.";
     return;
   }
 
+  // Usar UPSERT por clave para crear/actualizar la fila 'total_cartones'
   const { error } = await supabase
     .from('configuracion')
-    .update({
-      valore: String(nuevoTotal),         // usado por todo el código
-      total_cartones: nuevoTotal          // opcional, por compatibilidad
-    })
-    .eq('clave', 'total_cartones');
+    .upsert(
+      [{ clave: 'total_cartones', valore: String(nuevoTotal) }],
+      { onConflict: 'clave' }
+    );
 
   if (error) {
-    document.getElementById("estadoTotalCartones").textContent = "Error al actualizar.";
-    console.error(error);
+    console.error('guardarNuevoTotal error:', error);
+    estado.textContent = "Error al actualizar.";
   } else {
-    document.getElementById("estadoTotalCartones").textContent = "¡Total actualizado!";
+    estado.textContent = "¡Total actualizado!";
     totalCartones = nuevoTotal;
   }
 }
-
-
 async function contarCartonesVendidos() {
   const { count, error } = await supabase
     .from('cartones')
