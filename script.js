@@ -600,54 +600,23 @@ document.getElementById('abrirVentasBtn').addEventListener('click', async () => 
 });
 // Aprobar = simplemente marcar la inscripción como "aprobado"
 async function aprobarInscripcion(id, fila) {
-  try {
-    // 1. Buscar el comprobante asociado a la inscripción
-    const { data, error: fetchError } = await supabase
-      .from('inscripciones')
-      .select('comprobante')
-      .eq('id', id)
-      .single();
+  const { error } = await supabase
+    .from('inscripciones')
+    .update({ estado: 'aprobado' })
+    .eq('id', id);
 
-    if (fetchError || !data) {
-      alert('No se pudo obtener el comprobante para borrar.');
-      console.error(fetchError);
-      return;
-    }
-
-    // 2. Aprobar la inscripción
-    const { error: updateError } = await supabase
-      .from('inscripciones')
-      .update({ estado: 'aprobado' })
-      .eq('id', id);
-
-    if (updateError) {
-      console.error(updateError);
-      return alert('No se pudo aprobar');
-    }
-
-    // 3. Eliminar el comprobante del bucket
-    const nombreArchivo = data.comprobante.split('/').pop(); // solo el nombre del archivo
-    const { error: deleteError } = await supabase.storage
-      .from('comprobantes')
-      .remove([nombreArchivo]);
-
-    if (deleteError) {
-      console.warn('No se pudo eliminar el comprobante del bucket:', deleteError);
-    } else {
-      console.log(`Comprobante ${nombreArchivo} eliminado correctamente`);
-    }
-
-    // 4. Actualizar la UI
-    fila.querySelectorAll('button').forEach(b => (b.disabled = true));
-    const circulo = fila.querySelector('.estado-circulo');
-    if (circulo) circulo.classList.replace('rojo', 'verde');
-    alert('¡Inscripción aprobada y comprobante eliminado!');
-  } catch (err) {
-    console.error('Error al aprobar inscripción y eliminar comprobante:', err);
-    alert('Ocurrió un error al procesar la aprobación.');
+  if (error) {
+    console.error(error);
+    return alert('No se pudo aprobar');
   }
-}
 
+  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
+
+  const circulo = fila.querySelector('.estado-circulo');
+  if (circulo) circulo.classList.replace('rojo', 'verde');
+
+  alert('¡Inscripción aprobada!');
+}
 
 // Rechazar = borrar los cartones ocupados y marcar "rechazado"
 async function rechazarInscripcion(item, fila) {
