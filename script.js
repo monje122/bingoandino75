@@ -28,12 +28,14 @@ let totalCartones = 0;
 async function obtenerTotalCartones() {
   const { data, error } = await supabase
     .from('configuracion')
-    .select('total_cartones')
-    .eq('clave', 1)
+    .select('valore')
+    .eq('clave', 'total_cartones')
     .single();
 
   if (!error && data) {
-    totalCartones = data.total_cartones;
+    totalCartones = parseInt(data.valore, 10) || 0;
+  } else {
+    totalCartones = 0; // fallback seguro
   }
 }
 async function cargarPrecioPorCarton() {
@@ -155,28 +157,37 @@ function guardarDatosInscripcion() {
 
 // Cargar y mostrar cartones con imagen y modal
 async function cargarCartones() {
-  const { data } = await supabase.from('cartones').select('*');
-  cartonesOcupados = data.map(c => c.numero); // ✅ ACTUALIZAR VARIABLE GLOBA
+  // 🔁 Trae TODOS los ocupados (en páginas de 1000)
+  cartonesOcupados = await fetchTodosLosOcupados();
+  const ocupadosSet = new Set(cartonesOcupados); // O(1) para la verificación
+
   const contenedor = document.getElementById('contenedor-cartones');
   contenedor.innerHTML = '';
+
   for (let i = 1; i <= totalCartones; i++) {
     const carton = document.createElement('div');
     carton.textContent = i;
     carton.classList.add('carton');
 
-    
-    const estaOcupado = cartonesOcupados.includes(i); // ✅ USAR VARIABLE ACTUALIZADA
-    if (estaOcupado) {
-      carton.classList.add('ocupado');
+    if (ocupadosSet.has(i)) {
+      carton.classList.add('ocupado');  // ← rojo
     } else {
       carton.onclick = () => abrirModalCarton(i, carton);
     }
-
     contenedor.appendChild(carton);
   }
-  actualizarContadorCartones(totalCartones, cartonesOcupados.length, usuario.cartones.length);
+
+  // contador real (sin límite 1000)
+  await contarCartonesVendidos();
+  actualizarContadorCartones(
+    totalCartones,
+    Number(document.getElementById('total-vendidos').textContent) || cartonesOcupados.length,
+    usuario.cartones.length
+  );
   actualizarMonto();
 }
+
+
 
 // Marcar/desmarcar cartones
 function toggleCarton(num, elem) {
@@ -592,20 +603,54 @@ document.getElementById('abrirVentasBtn').addEventListener('click', async () => 
 });
 // Aprobar = simplemente marcar la inscripción como "aprobado"
 async function aprobarInscripcion(id, fila) {
-  const { error } = await supabase
-    .from('inscripciones')
-    .update({ estado: 'aprobado' })
-    .eq('id', id);
+  try {
+    // 1. Buscar el comprobante asociado a la inscripción
+    const { data, error: fetchError } = await supabase
+      .from('inscripciones')
+      .select('comprobante')
+      .eq('id', id)
+      .single();
 
-  if (error) {
-    console.error(error);
-    return alert('No se pudo aprobar');
+    if (fetchError || !data) {
+      alert('No se pudo obtener el comprobante para borrar.');
+      console.error(fetchError);
+      return;
+    }
+
+    // 2. Aprobar la inscripción
+    const { error: updateError } = await supabase
+      .from('inscripciones')
+      .update({ estado: 'aprobado' })
+      .eq('id', id);
+
+    if (updateError) {
+      console.error(updateError);
+      return alert('No se pudo aprobar');
+    }
+
+    // 3. Eliminar el comprobante del bucket
+    const nombreArchivo = data.comprobante.split('/').pop(); // solo el nombre del archivo
+    const { error: deleteError } = await supabase.storage
+      .from('comprobantes')
+      .remove([nombreArchivo]);
+
+    if (deleteError) {
+      console.warn('No se pudo eliminar el comprobante del bucket:', deleteError);
+    } else {
+      console.log(`Comprobante ${nombreArchivo} eliminado correctamente`);
+    }
+
+    // 4. Actualizar la UI
+    fila.querySelectorAll('button').forEach(b => (b.disabled = true));
+    const circulo = fila.querySelector('.estado-circulo');
+    if (circulo) circulo.classList.replace('rojo', 'verde');
+    alert('¡Inscripción aprobada y comprobante eliminado!');
+  } catch (err) {
+    console.error('Error al aprobar inscripción y eliminar comprobante:', err);
+    alert('Ocurrió un error al procesar la aprobación.');
   }
-  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
-  const circulo = fila.querySelector('.estado-circulo');
-  if (circulo) circulo.classList.replace('rojo', 'verde');
-  alert('¡Inscripción aprobada!');
 }
+
 
 // Rechazar = borrar los cartones ocupados y marcar "rechazado"
 async function rechazarInscripcion(item, fila) {
@@ -827,17 +872,15 @@ async function guardarNuevoTotal() {
   }
 }
 async function contarCartonesVendidos() {
-  const { data, error } = await supabase
+  const { count, error } = await supabase
     .from('cartones')
-    .select('numero');
+    .select('numero', { count: 'exact', head: true }); // ← solo el COUNT, sin filas
 
   if (error) {
     console.error('Error al contar cartones:', error);
     return;
   }
-
-  const total = data.length;
-  document.getElementById('total-vendidos').textContent = total;
+  document.getElementById('total-vendidos').textContent = count || 0;
 }
 const obtenerMontoTotalRecaudado = async () => {
   const { data, error } = await supabase
@@ -1423,4 +1466,40 @@ function buildWhatsAppLink(rawPhone, presetMsg = '') {
 
   const text = encodeURIComponent(presetMsg || 'Hola, te escribo de parte del equipo de bingoandino75.');
   return `https://wa.me/${waNumber}?text=${text}`;
+}
+async function fetchTodosLosOcupados() {
+  const pageSize = 1000;
+  let from = 0;
+  let todos = [];
+
+  // Primero pide el count total (sin traer filas)
+  const { count, error: countErr } = await supabase
+    .from('cartones')
+    .select('numero', { count: 'exact', head: true });
+
+  if (countErr) {
+    console.error('Error contando cartones:', countErr);
+    return [];
+  }
+
+  const total = count || 0;
+  while (from < total) {
+    const to = Math.min(from + pageSize - 1, total - 1);
+    const { data, error } = await supabase
+      .from('cartones')
+      .select('numero')
+      .order('numero', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      console.error('Error paginando cartones:', error);
+      break;
+    }
+
+    todos = todos.concat(data || []);
+    from += pageSize;
+  }
+
+  // Fuerza a número para que funcione includes()
+  return todos.map(r => Number(r.numero));
 }
