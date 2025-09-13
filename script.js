@@ -1449,3 +1449,139 @@ async function fetchTodosLosOcupados() {
   // Fuerza a número para que funcione includes()
   return todos.map(r => Number(r.numero));
 }
+// Utilidad segura para crear celda
+function td(text) {
+  const el = document.createElement('td');
+  el.textContent = text;
+  return el;
+}
+
+// Dibuja tabla de duplicados
+function renderDuplicados(lista) {
+  const cont = document.getElementById('duplicadosResultado');
+  cont.innerHTML = '';
+
+  if (!lista.length) {
+    cont.innerHTML = '<p style="color:#4caf50;font-weight:bold;">No se encontraron cartones duplicados en inscripciones activas.</p>';
+    return;
+  }
+
+  const tabla = document.createElement('table');
+  tabla.style.width = '100%';
+  tabla.style.borderCollapse = 'collapse';
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th style="border:1px solid #ccc;padding:6px;">Cartón</th>
+        <th style="border:1px solid #ccc;padding:6px;">Personas</th>
+        <th style="border:1px solid #ccc;padding:6px;">Veces</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = tabla.querySelector('tbody');
+
+  lista.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.appendChild(td(String(row.numero)));
+    tr.appendChild(td(row.personas.map(p => `${p.nombre} (${p.cedula})`).join(', ')));
+    tr.appendChild(td(String(row.veces)));
+    tbody.appendChild(tr);
+  });
+
+  cont.appendChild(tabla);
+}
+
+// Resalta en rojo las celdas “# Cartones” que contengan algún duplicado
+function resaltarCeldasDuplicadas(duplicadosSet) {
+  // En tu tabla admin: columnas -> Nombre, Teléfono, Cédula, Referido, # Cartones, Referencia, ...
+  // "# Cartones" es la columna 5 (index 4)
+  const cartonesCells = document.querySelectorAll('#tabla-comprobantes tbody tr td:nth-child(5)');
+  cartonesCells.forEach(td => {
+    const nums = td.textContent
+      .split(',')
+      .map(s => parseInt(s.trim(), 10))
+      .filter(n => Number.isFinite(n));
+
+    const tieneDuplicado = nums.some(n => duplicadosSet.has(n));
+    td.style.backgroundColor = tieneDuplicado ? 'rgba(255,0,0,0.18)' : ''; // resalta si aplica
+  });
+}
+
+// Lógica principal
+async function detectarCartonesDuplicados() {
+  const boton = document.getElementById('btnDuplicados');
+  const prev = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Buscando duplicados...';
+
+  try {
+    // 1) Trae inscripciones activas (solo columnas necesarias)
+    const { data, error } = await supabase
+      .from('inscripciones')
+      .select('id,nombre,cedula,estado,cartones')
+      .in('estado', ['pendiente', 'aprobado']);
+
+    if (error) throw error;
+
+    // 2) Construye un índice numero -> [{id, nombre, cedula}, ...]
+    const indice = new Map();
+
+    (data || []).forEach(ins => {
+      if (!Array.isArray(ins.cartones)) return;
+
+      // Evita contar duplicado dentro de la MISMA inscripción
+      const únicos = new Set(
+        ins.cartones
+          .map(x => {
+            // cartones es jsonb[]; cada elemento puede venir como número o json/texto
+            if (typeof x === 'number') return x;
+            if (typeof x === 'string') return parseInt(x, 10);
+            // jsonb -> sacar como string plano
+            try {
+              const s = (x && typeof x === 'object') ? JSON.stringify(x) : String(x);
+              return parseInt(s.replace(/[^0-9\-]/g,''), 10);
+            } catch { return NaN; }
+          })
+          .filter(n => Number.isFinite(n))
+      );
+
+      únicos.forEach(n => {
+        if (!indice.has(n)) indice.set(n, []);
+        indice.get(n).push({ id: ins.id, nombre: ins.nombre || '', cedula: ins.cedula || '' });
+      });
+    });
+
+    // 3) Filtra sólo números con más de un dueño
+    const duplicados = [];
+    const duplicadosSet = new Set();
+    for (const [numero, dueños] of indice.entries()) {
+      if (dueños.length > 1) {
+        duplicados.push({
+          numero,
+          personas: dueños,
+          veces: dueños.length
+        });
+        duplicadosSet.add(numero);
+      }
+    }
+
+    // 4) Ordena por veces desc, luego número asc
+    duplicados.sort((a, b) => (b.veces - a.veces) || (a.numero - b.numero));
+
+    // 5) Pinta resultados y resalta celdas
+    renderDuplicados(duplicados);
+    resaltarCeldasDuplicadas(duplicadosSet);
+
+  } catch (e) {
+    console.error(e);
+    const cont = document.getElementById('duplicadosResultado');
+    cont.innerHTML = '<p style="color:#f44336;">Error buscando duplicados. Revisa la consola.</p>';
+  } finally {
+    boton.disabled = false;
+    boton.textContent = prev;
+  }
+}
+
+// Hook al botón
+document.getElementById('btnDuplicados')?.addEventListener('click', detectarCartonesDuplicados);
