@@ -1300,57 +1300,33 @@ async function activarCohetes() {
   }
 }
 async function eliminarInscripcion(item, fila) {
-  const confirmar = confirm('¿Eliminar esta inscripción y liberar cartones?');
-
+  const confirmar = confirm('¿Eliminar esta inscripción? Se liberarán solo los cartones que nadie más tenga.');
   if (!confirmar) return;
 
   try {
-    // 1. Eliminar cartones
-    if (item.cartones?.length) {
-      await supabase.from('cartones').delete().in('numero', item.cartones);
-    }
+    // 1) Eliminar de forma "segura" en el servidor
+    const { data, error } = await supabase.rpc('rpc_eliminar_inscripcion_seguro', { _id: item.id });
+    if (error) throw error;
 
-    // 2. Eliminar comprobante del bucket
+    // 2) Eliminar comprobante del storage (si lo usas)
     if (item.comprobante) {
-      const partes = item.comprobante.split('/');
-      const nombreArchivo = partes.pop();
+      const nombreArchivo = item.comprobante.split('/').pop();
       await supabase.storage.from('comprobantes').remove([nombreArchivo]);
     }
 
-    // 3. Eliminar inscripción
-    await supabase.from('inscripciones').delete().eq('id', item.id);
-
-    // 4. Remover visualmente del panel admin
+    // 3) Actualizar UI
     fila.remove();
+    await contarCartonesVendidos();     // refresca contadores
+    await obtenerMontoTotalRecaudado(); // si lo calculas
+    await cargarCartones();             // refresca rojos
 
-    // 5. Quitar de lista de aprobados (admin)
-    const listaAdmin = document.getElementById('listaAprobados');
-    if (listaAdmin) {
-      listaAdmin.querySelectorAll('tr').forEach(tr => {
-        const celdas = tr.querySelectorAll('td');
-        if (celdas.length && celdas[1].textContent === item.cedula) {
-          tr.remove();
-        }
-      });
-    }
-
-    // 6. Quitar de la vista pública
-    const listaPublica = document.getElementById('contenedor-aprobados');
-    if (listaPublica) {
-      listaPublica.querySelectorAll('tr').forEach(tr => {
-        const celdas = tr.querySelectorAll('td');
-        if (celdas.length && celdas[1].textContent === item.cedula) {
-          tr.remove();
-        }
-      });
-    }
-
-    alert('Inscripción eliminada correctamente.');
-  } catch (err) {
-    console.error(err);
+    alert(`Inscripción eliminada. Cartones liberados: ${data ?? 0}`);
+  } catch (e) {
+    console.error(e);
     alert('Error al eliminar inscripción.');
   }
 }
+
 function ordenarInscripcionesPorNombre() {
   const tabla = document.querySelector('#tabla-comprobantes tbody');
   const filas = Array.from(tabla.rows);
