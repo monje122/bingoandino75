@@ -1585,3 +1585,98 @@ async function detectarCartonesDuplicados() {
 
 // Hook al botón
 document.getElementById('btnDuplicados')?.addEventListener('click', detectarCartonesDuplicados);
+
+// ---- Config local: margen para considerar "huérfano"
+const HUERFANOS_MIN_AGE = '0 minutes'; // pon '0 minutes' si quieres ver todo al instante
+
+function renderTablaHuerfanos(rows) {
+  const cont = document.getElementById('huerfanosResultado');
+  cont.innerHTML = '';
+
+  if (!rows || rows.length === 0) {
+    cont.innerHTML = '<p style="color:#4caf50;font-weight:bold;">No hay cartones huérfanos.</p>';
+    return;
+  }
+
+  const tabla = document.createElement('table');
+  tabla.style.width = '100%';
+  tabla.style.borderCollapse = 'collapse';
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th style="border:1px solid #ccc;padding:6px;">Cartón</th>
+        <th style="border:1px solid #ccc;padding:6px;">Reservado desde</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = tabla.querySelector('tbody');
+
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    const tdN = document.createElement('td');
+    const tdF = document.createElement('td');
+    tdN.textContent = r.numero;
+    tdN.style.border = '1px solid #ccc';
+    tdN.style.padding = '6px';
+    tdF.textContent = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+    tdF.style.border = '1px solid #ccc';
+    tdF.style.padding = '6px';
+    tr.appendChild(tdN);
+    tr.appendChild(tdF);
+    tbody.appendChild(tr);
+  });
+
+  cont.appendChild(tabla);
+}
+
+async function verHuerfanos() {
+  const btn = document.getElementById('btnVerHuerfanos');
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Buscando...';
+  try {
+    const { data, error } = await supabase.rpc('rpc_listar_cartones_huerfanos', {
+      _min_age: HUERFANOS_MIN_AGE
+    });
+    if (error) throw error;
+    renderTablaHuerfanos(data);
+  } catch (e) {
+    console.error(e);
+    document.getElementById('huerfanosResultado').innerHTML =
+      '<p style="color:#f44336;">Error buscando huérfanos. Revisa consola.</p>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
+async function liberarHuerfanos() {
+  if (!confirm('¿Liberar todos los cartones huérfanos?')) return;
+  const btn = document.getElementById('btnLiberarHuerfanos');
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Limpiando...';
+  try {
+    const { data, error } = await supabase.rpc('rpc_liberar_cartones_huerfanos', {
+      _min_age: HUERFANOS_MIN_AGE
+    });
+    if (error) throw error;
+
+    alert(`Listo. Cartones liberados: ${data ?? 0}`);
+    // refresca UI
+    await verHuerfanos();
+    await cargarCartones?.();            // tu función ya existente
+    await contarCartonesVendidos?.();    // tu contador
+  } catch (e) {
+    console.error(e);
+    alert('Error al liberar huérfanos.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
+document.getElementById('btnVerHuerfanos')?.addEventListener('click', verHuerfanos);
+document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
+
