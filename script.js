@@ -510,7 +510,11 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
       <td>${item.cedula}</td>
       <td>${item.referido}</td>
        <td>${item.cartones.join(', ')}</td>
-       <td>${item.referencia4dig || ''}</td>
+       <td class="celda-ref" data-id="${item.id}">
+  <span class="ref-text">${item.referencia4dig || ''}</span>
+  <button class="btn-accion btn-edit-ref" title="Editar">&#9998;</button>
+</td>
+
       <td><a href="${item.comprobante}" target="_blank">
             <img src="${item.comprobante}" alt="Comp.">
           </a></td>
@@ -526,12 +530,14 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
     const btnAprobar  = tr.querySelector('.btn-aprobar');
     const btnRechazar = tr.querySelector('.btn-rechazar');
     const btnEliminar = tr.querySelector('.btn-eliminar');
+    const btnEditRef = tr.querySelector('.btn-edit-ref');
+
 
 
     btnAprobar.onclick = () => aprobarInscripcion(item.id, tr);
     btnRechazar.onclick = () => rechazarInscripcion(item, tr);
     btnEliminar.onclick = () => eliminarInscripcion(item, tr);
-    
+    btnEditRef.onclick = () => editarReferencia(tr.querySelector('.celda-ref'));
     // Si la inscripción ya fue procesada, inhabilitamos los botones
     if (item.estado === 'aprobado') {
       btnAprobar.disabled = true;
@@ -1858,3 +1864,76 @@ document.getElementById('btnMenos').onclick = () => {
 
 document.getElementById('cantidadCartones')
   .addEventListener('input', limpiarPromoPorCambioCantidad);
+function restringirSolo4Digitos(input) {
+  input.value = input.value.replace(/\D+/g, '').slice(0, 4); // solo números, máx 4
+}
+
+function editarReferencia(td) {
+  const id   = td.getAttribute('data-id');
+  const prev = (td.querySelector('.ref-text')?.textContent || '').trim();
+
+  td.innerHTML = `
+    <input class="ref-input" type="text" maxlength="4" value="${prev}">
+    <button class="btn-mini btn-guardar">Guardar</button>
+    <button class="btn-mini btn-cancelar">Cancelar</button>
+  `;
+
+  const inp     = td.querySelector('.ref-input');
+  const btnOk   = td.querySelector('.btn-guardar');
+  const btnCancel = td.querySelector('.btn-cancelar');
+
+  // Restringe a 4 dígitos mientras escribe
+  inp.addEventListener('input', () => restringirSolo4Digitos(inp));
+  inp.focus();
+  inp.select();
+
+  // Enter guarda, Escape cancela
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btnOk.click();
+    if (e.key === 'Escape') btnCancel.click();
+  });
+
+  btnOk.onclick = async () => {
+    const val = (inp.value || '').trim();
+    if (!/^\d{4}$/.test(val)) {
+      alert('La referencia debe tener exactamente 4 dígitos (0000–9999).');
+      inp.focus();
+      return;
+    }
+
+    // (Opcional) Verifica duplicados activos:
+    // const { data: dup } = await supabase
+    //   .from('inscripciones')
+    //   .select('id', { count: 'exact', head: true })
+    //   .eq('referencia4dig', val)
+    //   .in('estado', ['pendiente','aprobado']);
+
+    // Guardar en BD
+    const { error } = await supabase
+      .from('inscripciones')
+      .update({ referencia4dig: val })
+      .eq('id', id);
+
+    if (error) {
+      // Si ves 42501 es por RLS; ajusta políticas para UPDATE en 'referencia4dig'
+      console.error(error);
+      alert('No se pudo guardar la referencia.');
+      return;
+    }
+
+    // Volver a modo lectura
+    td.innerHTML = `
+      <span class="ref-text">${val}</span>
+      <button class="btn-accion btn-edit-ref" title="Editar">&#9998;</button>
+    `;
+    td.querySelector('.btn-edit-ref').onclick = () => editarReferencia(td);
+  };
+
+  btnCancel.onclick = () => {
+    td.innerHTML = `
+      <span class="ref-text">${prev}</span>
+      <button class="btn-accion btn-edit-ref" title="Editar">&#9998;</button>
+    `;
+    td.querySelector('.btn-edit-ref').onclick = () => editarReferencia(td);
+  };
+}
