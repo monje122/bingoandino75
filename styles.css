@@ -344,3 +344,17 @@ a[href*="wa.me"]:hover {
 .celda-ref .btn-guardar { background:#28a745; color:#fff; }
 .celda-ref .btn-cancelar { background:#6c757d; color:#fff; }
 .celda-ref .btn-edit-ref { color:#007bff; }
+.dup-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 14px 0;
+  font-size: 14px;
+}
+.dup-table th, .dup-table td {
+  border: 1px solid #ccc;
+  padding: 6px 8px;
+  text-align: left;
+}
+.resaltado-dup {
+  background: rgba(255, 215, 0, 0.22); /* amarillo suave */
+}
