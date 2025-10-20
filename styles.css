@@ -325,3 +325,22 @@ a[href*="wa.me"]:hover {
   cursor: not-allowed;
 }
 #totalPagarCartones { display: none; }
+
+.celda-ref { white-space: nowrap; }
+.celda-ref input.ref-input {
+  width: 70px;
+  padding: 6px 8px;
+  font-size: 14px;
+  text-align: center;
+}
+.celda-ref .btn-mini {
+  margin-left: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+.celda-ref .btn-guardar { background:#28a745; color:#fff; }
+.celda-ref .btn-cancelar { background:#6c757d; color:#fff; }
+.celda-ref .btn-edit-ref { color:#007bff; }
