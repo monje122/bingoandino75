@@ -166,10 +166,11 @@ async function mostrarVentana(id) {
   if (target) target.classList.remove('oculto');
 
   // 👇👇 APAGA LA PROMO AQUÍ CUANDO ENTRES A "cantidad"
-  if (id === 'cantidad') {
-    promoSeleccionada = false;        // ← clave: vuelve al modo normal
-    actualizarPreseleccion?.();       // recalcula el total normal
-    renderPromocionEnCantidad?.();    // deja visible el botón de promo (si está activa)
+if (id === 'cantidad') {
+  promoSeleccionada = false;        // flujo normal => sin promo
+  await cargarPromocionConfig();    // <- recarga por si cambió en admin
+  renderPromocionEnCantidad();      // <- repinta el botón (o lo oculta)
+  actualizarPreseleccion();
   }
   // 4) Acciones por sección
   if (id === 'cartones') {
