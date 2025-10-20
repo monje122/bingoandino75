@@ -299,3 +299,28 @@ a[href*="wa.me"]:hover {
   text-decoration: underline;
   color: #128C7E;
 }
+
+.grid-promo {
+  display: grid;
+  grid-template-columns: 1fr 140px 160px;
+  gap: 10px;
+  margin: 8px 0 12px 0;
+}
+
+.btn-promo {
+  background: #00b894;
+  color: #fff !important;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-promo:hover { filter: brightness(1.05); }
+
+/* Visual de casillas bloqueadas (ya usas .bloqueado en JS) */
+.carton.bloqueado {
+  filter: grayscale(1);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
