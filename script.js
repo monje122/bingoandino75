@@ -1,10 +1,35 @@
 const supabaseUrl = 'https://dbkixcpwirjwjvjintkr.supabase.co';
 const supabase = window.supabase.createClient(supabaseUrl, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho');
 
+async function getConfigValue(clave, fallback = null) {
+  const { data, error } = await supabase
+    .from('configuracion')
+    .select('valore, valor')
+    .eq('clave', clave)
+    .single();
+
+  if (error || !data) return fallback;
+  return (data.valore ?? data.valor ?? fallback);
+}
+
+async function setConfigValue(clave, value) {
+  const { error } = await supabase
+    .from('configuracion')
+    .upsert([{ clave, valore: value }], { onConflict: 'clave' });
+  return !error;
+}
+
+
 // Variables globales
 let cartonesOcupados = [];
 let precioPorCarton = 0;
 let cantidadPermitida = 0;
+
+let promoActiva = false;
+let promoCantidad = 0;
+let promoPrecioTotal = 0;
+let promoDescripcion = '';
+let promoSeleccionada = false; // si el usuario eligió usar la promo
 
 let usuario = {
   nombre: '',
@@ -19,6 +44,8 @@ window.addEventListener('DOMContentLoaded', async () => {
    await cargarPrecioPorCarton();
   await cargarConfiguracionModoCartones(); 
   generarCartones();// genera del 1 al totalCartones
+await cargarPromocionConfig();   // ← NUEVO
+  renderPromocionEnCantidad();     // ← NUEVO
 
 });
 
@@ -89,58 +116,79 @@ function confirmarCantidad() {
     return alert(`Solo quedan ${maxDisponibles} cartones disponibles`);
   }
 }
+   resetPromo();
   cantidadPermitida   = cant;   // guardamos el tope
   usuario.cartones    = [];     // limpiamos selección anterior, si hubiera
   mostrarVentana('cartones');
    }
   
 
-// Navegación entre secciones
+// Helper opcional (si no lo tienes ya)
+function isTrue(v) {
+  return v === true || v === 'true' || v === 1 || v === '1';
+}
+
 async function mostrarVentana(id) {
-  // Si es la sección de cartones, primero verificamos si las ventas están abiertas
+  // 1) Si va a CARTONES, valida ventas_abierta de forma robusta
   if (id === 'cartones') {
+    // Si usas getConfigValue, mejor:
+    // const ventasAbierta = await getConfigValue('ventas_abierta', 'true');
+    // if (!isTrue(ventasAbierta)) { ... }
+
+    // Si NO tienes getConfigValue aún, al menos soporta valor/valore:
     const { data } = await supabase
       .from('configuracion')
-      .select('valor')
+      .select('valore, valor')
       .eq('clave', 'ventas_abierta')
       .single();
 
-  if (!data || data.valor === false) {
-  alert('Las ventas están cerradas');
-  document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
-  document.getElementById('bienvenida').classList.remove('oculto');
-  return;
-}
-  }
- if (id === 'pago') {
-    if (modoCartones === 'fijo') {
-      if (usuario.cartones.length !== cantidadFijaCartones) {
-        alert(`Debes elegir exactamente ${cantidadFijaCartones} cartones antes de continuar.`);
-        return;
-      }
-    } else { // modo libre
-      if (usuario.cartones.length !== cantidadPermitida) {
-        alert(`Debes elegir exactamente ${cantidadPermitida} cartones antes de continuar.`);
-        return;
-      }
+    const ventasAbierta = data ? (data.valore ?? data.valor ?? 'true') : 'true';
+    if (!isTrue(ventasAbierta)) {
+      alert('Las ventas están cerradas');
+      document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
+      document.getElementById('bienvenida').classList.remove('oculto');
+      return;
     }
   }
-  // Ahora mostramos la ventana deseada
-  document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
-  document.getElementById(id).classList.remove('oculto');
 
-  if (id === 'cartones') {
-    cargarCartones();
- 
-  }
+  // 2) Si va a PAGO, valida cantidad exacta (modo fijo o libre/promo)
   if (id === 'pago') {
-    document.getElementById('monto-pago').textContent = usuario.cartones.length * precioPorCarton;
+    const requerido = (modoCartones === 'fijo') ? cantidadFijaCartones : cantidadPermitida;
+    if (usuario.cartones.length !== requerido) {
+      alert(`Debes elegir exactamente ${requerido} cartones antes de continuar.`);
+      return;
+    }
   }
-  
+
+  // 3) Mostrar la ventana solicitada
+  document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
+  const target = document.getElementById(id);
+  if (target) target.classList.remove('oculto');
+
+  // 👇👇 APAGA LA PROMO AQUÍ CUANDO ENTRES A "cantidad"
+  if (id === 'cantidad') {
+    promoSeleccionada = false;        // ← clave: vuelve al modo normal
+    actualizarPreseleccion?.();       // recalcula el total normal
+    renderPromocionEnCantidad?.();    // deja visible el botón de promo (si está activa)
+  }
+  // 4) Acciones por sección
+  if (id === 'cartones') {
+    await cargarCartones(); // ← importante usar await
+  }
+
+  if (id === 'pago') {
+    // 👇 Aquí sí va el monto con promo
+    const monto = promoSeleccionada
+      ? promoPrecioTotal
+      : (usuario.cartones.length * (precioPorCarton || 0));
+    document.getElementById('monto-pago').textContent = monto.toFixed(2);
+  }
+
   if (id === 'lista-aprobados') {
     await cargarListaAprobadosSeccion();
   }
 }
+
 // Guardar datos del formulario
 function guardarDatosInscripcion() {
   usuario.nombre = document.getElementById('nombre').value;
@@ -230,8 +278,16 @@ function toggleCarton(num, elem) {
 }
  
 function actualizarMonto() {
-  document.getElementById('monto-total').textContent = usuario.cartones.length * precioPorCarton;
+  let total;
+  if (promoSeleccionada) {
+    total = promoPrecioTotal;
+  } else {
+    total = (usuario.cartones.length || 0) * (precioPorCarton || 0);
+  }
+  const nodo = document.getElementById('monto-total');
+  if (nodo) nodo.textContent = total.toFixed(2);
 }
+
 
 // Subir comprobante y guardar en Supabase
 async function enviarComprobante() {
@@ -1080,6 +1136,8 @@ async function cargarPanelAdmin() {
   await contarCartonesVendidos();
   await cargarModoCartonesAdmin();
   await cargarCartones(); // ← asegúrate de que esto se llama
+  await cargarPromoAdminForm();
+
 }
 let modoCartones = "libre";
 let cantidadFijaCartones = 1;
@@ -1679,4 +1737,123 @@ async function liberarHuerfanos() {
 
 document.getElementById('btnVerHuerfanos')?.addEventListener('click', verHuerfanos);
 document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
+async function cargarPromocionConfig() {
+  const a = await getConfigValue('promo_activa', 'false');
+  promoActiva = (a === true || a === 'true' || a === 1 || a === '1');
 
+  promoCantidad     = parseInt(await getConfigValue('promo_cantidad', '0')) || 0;
+  promoPrecioTotal  = parseFloat(await getConfigValue('promo_precio_total', '0')) || 0;
+  promoDescripcion  = await getConfigValue('promo_descripcion', '') || '';
+}
+
+function renderPromocionEnCantidad() {
+  const box = document.getElementById('promoBox');
+  const btn = document.getElementById('btnUsarPromo');
+  const det = document.getElementById('promoDetalle');
+  if (!box || !btn || !det) return;
+
+  if (!promoActiva || !promoCantidad || !promoPrecioTotal) {
+    box.classList.add('oculto');
+    return;
+  }
+
+  // Texto visible del botón promocional
+  btn.textContent = promoDescripcion || `Promo: ${promoCantidad} cartones por ${promoPrecioTotal.toFixed(2)} Bs`;
+
+  // Pequeño cálculo de ahorro (opcional)
+  const ahorro = (promoCantidad * (precioPorCarton || 0)) - promoPrecioTotal;
+  det.textContent = (ahorro > 0)
+    ? `Ahorro estimado: ${ahorro.toFixed(2)} Bs`
+    : `Precio paquete: ${promoPrecioTotal.toFixed(2)} Bs`;
+
+  box.classList.remove('oculto');
+  btn.onclick = usarPromocion;
+}
+
+function usarPromocion() {
+  const maxDisponibles = totalCartones - cartonesOcupados.length;
+  if (promoCantidad > maxDisponibles) {
+    alert(`No hay suficientes cartones disponibles para la promoción (disponibles: ${maxDisponibles}).`);
+    return;
+  }
+  promoSeleccionada = true;          // ← CLAVE: sólo aquí va a true
+  cantidadPermitida = promoCantidad;
+  usuario.cartones = [];
+  mostrarVentana('cartones');
+  actualizarMonto();
+}
+
+document.getElementById('guardarPromoBtn').addEventListener('click', async () => {
+  const activa = document.getElementById('promoActivaChk').checked;
+  const desc   = document.getElementById('promoDescripcion').value.trim();
+  const cant   = parseInt(document.getElementById('promoCantidad').value);
+  const precio = parseFloat(document.getElementById('promoPrecio').value);
+  const estado = document.getElementById('estadoPromo');
+
+  if (activa && (!cant || cant < 1 || isNaN(precio) || precio <= 0)) {
+    alert('Completa cantidad y precio válidos para activar la promoción.');
+    return;
+  }
+
+  const ups = [
+    { clave: 'promo_activa',       valore: String(activa) },
+    { clave: 'promo_descripcion',  valore: desc || '' },
+    { clave: 'promo_cantidad',     valore: String(cant || 0) },
+    { clave: 'promo_precio_total', valore: String(precio || 0) },
+  ];
+
+  const { error } = await supabase.from('configuracion').upsert(ups, { onConflict: 'clave' });
+  if (error) {
+    estado.textContent = 'Error guardando promoción';
+    console.error(error);
+  } else {
+    estado.textContent = 'Promoción guardada';
+    // refresca variables locales + UI
+    promoActiva      = activa;
+    promoDescripcion = desc;
+    promoCantidad    = cant || 0;
+    promoPrecioTotal = precio || 0;
+    renderPromocionEnCantidad();
+  }
+});
+async function cargarPromoAdminForm() {
+  const a = await getConfigValue('promo_activa', 'false');
+  const d = await getConfigValue('promo_descripcion', '');
+  const c = await getConfigValue('promo_cantidad', '0');
+  const p = await getConfigValue('promo_precio_total', '0');
+
+  const chk = document.getElementById('promoActivaChk');
+  const inpD = document.getElementById('promoDescripcion');
+  const inpC = document.getElementById('promoCantidad');
+  const inpP = document.getElementById('promoPrecio');
+
+  if (chk) chk.checked = (a === true || a === 'true' || a === 1 || a === '1');
+  if (inpD) inpD.value = d || '';
+  if (inpC) inpC.value = parseInt(c) || 0;
+  if (inpP) inpP.value = parseFloat(p) || 0;
+}
+
+function resetPromo() {
+  promoSeleccionada = false;
+}
+function limpiarPromoPorCambioCantidad() {
+  if (promoSeleccionada) {
+    promoSeleccionada = false;
+    // opcional: feedback visual si quieres
+    // renderPromocionEnCantidad();
+  }
+  actualizarPreseleccion();
+}
+
+document.getElementById('btnMas').onclick = () => {
+  document.getElementById('cantidadCartones').stepUp();
+  limpiarPromoPorCambioCantidad();   // ← apaga promo
+};
+
+document.getElementById('btnMenos').onclick = () => {
+  document.getElementById('cantidadCartones').stepDown();
+  limpiarPromoPorCambioCantidad();   // ← apaga promo
+};
+
+document.getElementById('cantidadCartones')
+  .addEventListener('input', limpiarPromoPorCambioCantidad);
