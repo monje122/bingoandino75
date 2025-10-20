@@ -339,6 +339,9 @@ async function enviarComprobante() {
       await cargarCartones();
       return;
     }
+const monto = promoSeleccionada
+  ? (promoPrecioTotal || 0)
+  : ( (usuario.cartones.length || 0) * (precioPorCarton || 0) );
 
     // Si llegamos aquí, los cartones SON NUESTROS ⇒ ahora guardamos inscripción
     const { error: errorInsert } = await supabase.from('inscripciones').insert([{
@@ -349,7 +352,11 @@ async function enviarComprobante() {
       cartones: usuario.cartones,
       referencia4dig: referencia4dig,
       comprobante: urlPublica,
-      estado: 'pendiente'
+      estado: 'pendiente',
+       monto_bs: monto,
+  usa_promo: !!promoSeleccionada,
+  promo_desc: promoSeleccionada ? (promoDescripcion || '') : null,
+  precio_unitario_bs: promoSeleccionada ? null : (precioPorCarton || 0)
     }]);
 
     if (errorInsert) {
@@ -947,29 +954,31 @@ async function contarCartonesVendidos() {
   document.getElementById('total-vendidos').textContent = count || 0;
 }
 const obtenerMontoTotalRecaudado = async () => {
+  // Si prefieres contar solo aprobados: añade .eq('estado', 'aprobado')
   const { data, error } = await supabase
     .from('inscripciones')
-    .select('cartones');
+    .select('monto_bs, cartones');
 
   if (error) {
     console.error('Error al obtener inscripciones:', error.message);
     return;
   }
 
-  let totalCartones = 0;
-
-  data.forEach(inscripcion => {
-    if (Array.isArray(inscripcion.cartones)) {
-      totalCartones += inscripcion.cartones.length;
+  let total = 0;
+  for (const ins of (data || [])) {
+    let m = Number(ins.monto_bs);
+    if (!(m > 0)) {
+      // 🔙 Fallback para inscripciones viejas sin monto_bs
+      const unidades = Array.isArray(ins.cartones) ? ins.cartones.length : 0;
+      m = unidades * (precioPorCarton || 0);
     }
-  });
+    total += m;
+  }
 
-  // Cambia esto si tu precio es diferente
-  const montoTotal = totalCartones * precioPorCarton;
-document.getElementById('totalMonto').textContent = 
-  new Intl.NumberFormat('es-VE', { style: 'currency', currency: 'VES' }).format(montoTotal);
-
+  document.getElementById('totalMonto').textContent =
+    new Intl.NumberFormat('es-VE', { style: 'currency', currency: 'VES' }).format(total);
 };
+
 
 // Llama la función cuando cargue el admin
 obtenerMontoTotalRecaudado();
