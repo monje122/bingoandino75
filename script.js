@@ -582,17 +582,43 @@ document.getElementById('cerrarVentasBtn').addEventListener('click', async () =>
 // Reiniciar base de datos
 async function reiniciarTodo() {
   if (!confirm('¿Estás seguro de reiniciar todo?')) return;
+
+  // 1) Tablas
   await supabase.from('inscripciones').delete().neq('cedula', '');
   await supabase.from('cartones').delete().neq('numero', 0);
-  const { data: archivos } = await supabase.storage.from('comprobantes').list();
-  const listaDiv = document.getElementById('listaAprobados');
-  if (listaDiv) listaDiv.innerHTML = '';
-  for (const file of archivos) {
-    await supabase.storage.from('comprobantes').remove([file.name]);
+
+  // 2) Storage: borrar TODOS los comprobantes (paginado + batch)
+  let totalEliminados = 0;
+  const pageSize = 1500;
+  let offset = 0;
+
+  while (true) {
+    const { data: files, error: listErr } = await supabase.storage
+      .from('comprobantes')
+      .list('', { limit: pageSize, offset, sortBy: { column: 'name', order: 'asc' } });
+
+    if (listErr) {
+      alert('Error listando comprobantes: ' + listErr.message);
+      break;
+    }
+    if (!files || files.length === 0) break;
+
+    const names = files.map(f => f.name);
+    const { error: delErr } = await supabase.storage.from('comprobantes').remove(names);
+    if (delErr) {
+      alert('Error eliminando comprobantes: ' + delErr.message);
+      break;
+    }
+
+    totalEliminados += names.length;
+    if (files.length < pageSize) break;
+    offset += pageSize;
   }
-  alert('Datos reiniciados');
+
+  alert(`Datos reiniciados. Comprobantes eliminados: ${totalEliminados}`);
   location.reload();
 }
+
 
 // Variables para modal
 let cartonSeleccionadoTemporal = null;
