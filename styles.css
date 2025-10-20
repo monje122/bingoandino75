@@ -324,3 +324,4 @@ a[href*="wa.me"]:hover {
   opacity: 0.45;
   cursor: not-allowed;
 }
+#totalPagarCartones { display: none; }
