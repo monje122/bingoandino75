@@ -419,6 +419,11 @@ async function entrarAdmin() {
 obtenerMontoTotalRecaudado();
   
   contarCartonesVendidos();
+  
+  document.getElementById('btnDupNombreAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorNombre);
+document.getElementById('btnDupReferenciaAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorReferencia);
+
+  
 document.getElementById('verListaBtn').addEventListener('click', async () => {
   const { data, error } = await supabase
     .from('inscripciones')
@@ -1936,4 +1941,137 @@ function editarReferencia(td) {
     `;
     td.querySelector('.btn-edit-ref').onclick = () => editarReferencia(td);
   };
+}
+// === Helpers de normalización/parseo ===
+function normalizarNombre(s='') {
+  return String(s)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quita acentos
+    .replace(/\s+/g, ' ');                             // colapsa espacios
+}
+function solo4Digitos(s='') {
+  const t = String(s).replace(/\D+/g, '').slice(0,4);
+  return /^\d{4}$/.test(t) ? t : '';
+}
+
+// === Fetch de aprobados (solo las columnas que usaremos) ===
+async function fetchAprobadosBasico() {
+  const { data, error } = await supabase
+    .from('inscripciones')
+    .select('id,nombre,cedula,telefono,cartones,referencia4dig')
+    .eq('estado','aprobado');
+  if (error) {
+    console.error('Error cargando aprobados:', error);
+    alert('No se pudieron cargar los aprobados.');
+    return [];
+  }
+  return data || [];
+}
+
+// === Render de tabla de duplicados genérica ===
+function renderDuplicadosAprobados(lista, tipoClave /* 'nombre' | 'referencia' */) {
+  const cont = document.getElementById('duplicadosAprobadosResultado');
+  if (!cont) return;
+  cont.innerHTML = '';
+
+  if (!lista.length) {
+    cont.innerHTML = `<p style="color:#4caf50;font-weight:600;">No se encontraron duplicados por ${tipoClave} entre los aprobados.</p>`;
+    return;
+  }
+
+  const tbl = document.createElement('table');
+  tbl.className = 'dup-table';
+  tbl.innerHTML = `
+    <thead>
+      <tr>
+        <th>${tipoClave === 'nombre' ? 'Nombre (normalizado)' : 'Referencia (4 dígitos)'}</th>
+        <th>Veces</th>
+        <th>Personas</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = tbl.querySelector('tbody');
+
+  lista.forEach(g => {
+    const tr = document.createElement('tr');
+    const personasTxt = g.items.map(x => {
+      const carts = Array.isArray(x.cartones) ? x.cartones.join(', ') : '';
+      return `${x.nombre} (CI: ${x.cedula})${x.telefono ? ' – ' + x.telefono : ''}${carts ? ' – Cartones: ' + carts : ''}`;
+    }).join(' | ');
+    tr.innerHTML = `
+      <td>${g.clave}</td>
+      <td>${g.items.length}</td>
+      <td>${personasTxt}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  cont.appendChild(tbl);
+}
+
+// === Resalta filas duplicadas en la tabla ya pintada por "Ver lista" (solo por nombre) ===
+function resaltarDuplicadosNombreEnListaAprobados(dupNameSet) {
+  const listaDiv = document.getElementById('listaAprobados');
+  if (!listaDiv) return;
+  const table = listaDiv.querySelector('table');
+  if (!table) return;
+
+  // limpiar resaltados previos
+  table.querySelectorAll('tbody tr').forEach(tr => tr.classList.remove('resaltado-dup'));
+
+  // Asumimos que la primera columna de esa tabla es "Nombre"
+  table.querySelectorAll('tbody tr').forEach(tr => {
+    const nombreTxt = tr.cells?.[0]?.textContent || '';
+    if (dupNameSet.has(normalizarNombre(nombreTxt))) {
+      tr.classList.add('resaltado-dup');
+    }
+  });
+}
+
+// === Detector de duplicados por NOMBRE (aprobados) ===
+async function detectarDuplicadosAprobadosPorNombre() {
+  const rows = await fetchAprobadosBasico();
+  const mapa = new Map(); // nombreNorm -> [rows]
+  rows.forEach(r => {
+    const k = normalizarNombre(r.nombre);
+    if (!k) return;
+    if (!mapa.has(k)) mapa.set(k, []);
+    mapa.get(k).push(r);
+  });
+  // Solo grupos con más de 1
+  const duplicados = [];
+  const dupSet = new Set();
+  for (const [k, arr] of mapa.entries()) {
+    if (arr.length > 1) {
+      duplicados.push({ clave: k, items: arr });
+      dupSet.add(k);
+    }
+  }
+  // Orden: más repetidos primero
+  duplicados.sort((a,b) => (b.items.length - a.items.length) || a.clave.localeCompare(b.clave));
+  renderDuplicadosAprobados(duplicados, 'nombre');
+  resaltarDuplicadosNombreEnListaAprobados(dupSet);
+}
+
+// === Detector de duplicados por REFERENCIA (aprobados) ===
+async function detectarDuplicadosAprobadosPorReferencia() {
+  const rows = await fetchAprobadosBasico();
+  const mapa = new Map(); // ref4 -> [rows]
+  rows.forEach(r => {
+    const ref = solo4Digitos(r.referencia4dig);
+    if (!ref) return;
+    if (!mapa.has(ref)) mapa.set(ref, []);
+    mapa.get(ref).push(r);
+  });
+  const duplicados = [];
+  for (const [ref, arr] of mapa.entries()) {
+    if (arr.length > 1) duplicados.push({ clave: ref, items: arr });
+  }
+  duplicados.sort((a,b) => (b.items.length - a.items.length) || (a.clave.localeCompare(b.clave)));
+  renderDuplicadosAprobados(duplicados, 'referencia');
+
+  // (Opcional) También podríamos resaltar en la tabla de "listaAprobados",
+  // pero esa tabla no muestra la referencia. Si quieres, puedo agregarte la columna.
 }
