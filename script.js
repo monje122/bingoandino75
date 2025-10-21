@@ -24,12 +24,15 @@ async function setConfigValue(clave, value) {
 let cartonesOcupados = [];
 let precioPorCarton = 0;
 let cantidadPermitida = 0;
+let promocionSeleccionada = null; 
 
-let promoActiva = false;
-let promoCantidad = 0;
-let promoPrecioTotal = 0;
-let promoDescripcion = '';
-let promoSeleccionada = false; // si el usuario eligió usar la promo
+const promociones = [
+  { id: 1, activa: false, descripcion: '', cantidad: 0, precio: 0 },
+  { id: 2, activa: false, descripcion: '', cantidad: 0, precio: 0 },
+  { id: 3, activa: false, descripcion: '', cantidad: 0, precio: 0 },
+  { id: 4, activa: false, descripcion: '', cantidad: 0, precio: 0 }
+];
+
 
 let usuario = {
   nombre: '',
@@ -40,15 +43,17 @@ let usuario = {
 
 };
 window.addEventListener('DOMContentLoaded', async () => {
-  await obtenerTotalCartones(); // lee desde Supabase
-   await cargarPrecioPorCarton();
-  await cargarConfiguracionModoCartones(); 
-  generarCartones();// genera del 1 al totalCartones
-await cargarPromocionConfig();   // ← NUEVO
-  renderPromocionEnCantidad();     // ← NUEVO
-
+  await obtenerTotalCartones();
+  await cargarPrecioPorCarton();
+  await cargarConfiguracionModoCartones();
+  generarCartones();
+  await cargarPromocionesConfig();  // ← Cambiar por el nuevo sistema
+  // renderPromocionEnCantidad();   // ← Eliminar esta línea
+   const guardianPromotion = document.getElementById("guardarPromocionesBtn");
+  if (guardianPromotion) {
+    guardianPromotion.addEventListener('click', guardarPromociones);
+  }
 });
-
 
 let totalCartones = 0;
  
@@ -100,42 +105,42 @@ document.getElementById('btnMenos').onclick = () => {
 document.getElementById('cantidadCartones').addEventListener('input', actualizarPreseleccion);
 
 function confirmarCantidad() {
-  const cant = parseInt(document.getElementById('cantidadCartones').value);
-  const maxDisponibles = totalCartones - cartonesOcupados.length;
+  const promo = getPromocionSeleccionada();
+  let cant;
   
-  
-  if (modoCartones === 'fijo') {
-    if (cant !== cantidadFijaCartones) {
-      return alert(`Debes seleccionar exactamente ${cantidadFijaCartones} cartones.`);
-    }
+  if (promo) {
+    // Usar cantidad de la promoción
+    cant = promo.cantidad;
   } else {
-  if (isNaN(cant) || cant < 1) {
-    return alert('Ingresa un número válido');
+    // Usar cantidad manual
+    cant = parseInt(document.getElementById('cantidadCartones').value);
+    const maxDisponibles = totalCartones - cartonesOcupados.length;
+    
+    if (modoCartones === 'fijo') {
+      if (cant !== cantidadFijaCartones) {
+        return alert(`Debes seleccionar exactamente ${cantidadFijaCartones} cartones.`);
+      }
+    } else {
+      if (isNaN(cant) || cant < 1) {
+        return alert('Ingresa un número válido');
+      }
+      if (cant > maxDisponibles) {
+        return alert(`Solo quedan ${maxDisponibles} cartones disponibles`);
+      }
+    }
   }
-  if (cant > maxDisponibles) {
-    return alert(`Solo quedan ${maxDisponibles} cartones disponibles`);
-  }
-}
-   resetPromo();
-  cantidadPermitida   = cant;   // guardamos el tope
-  usuario.cartones    = [];     // limpiamos selección anterior, si hubiera
-  mostrarVentana('cartones');
-   }
   
-
-// Helper opcional (si no lo tienes ya)
+  cantidadPermitida = cant;
+  usuario.cartones = [];
+  mostrarVentana('cartones');
+}
 function isTrue(v) {
   return v === true || v === 'true' || v === 1 || v === '1';
 }
 
 async function mostrarVentana(id) {
-  // 1) Si va a CARTONES, valida ventas_abierta de forma robusta
+  // 1) Si va a CARTONES, valida ventas_abierta
   if (id === 'cartones') {
-    // Si usas getConfigValue, mejor:
-    // const ventasAbierta = await getConfigValue('ventas_abierta', 'true');
-    // if (!isTrue(ventasAbierta)) { ... }
-
-    // Si NO tienes getConfigValue aún, al menos soporta valor/valore:
     const { data } = await supabase
       .from('configuracion')
       .select('valore, valor')
@@ -151,6 +156,7 @@ async function mostrarVentana(id) {
     }
   }
 
+
   // 2) Si va a PAGO, valida cantidad exacta (modo fijo o libre/promo)
   if (id === 'pago') {
     const requerido = (modoCartones === 'fijo') ? cantidadFijaCartones : cantidadPermitida;
@@ -165,28 +171,25 @@ async function mostrarVentana(id) {
   const target = document.getElementById(id);
   if (target) target.classList.remove('oculto');
 
-  // 👇👇 APAGA LA PROMO AQUÍ CUANDO ENTRES A "cantidad"
-if (id === 'cantidad') {
-  promoSeleccionada = false;        // flujo normal => sin promo
-  await cargarPromocionConfig();    // <- recarga por si cambió en admin
-  renderPromocionEnCantidad();      // <- repinta el botón (o lo oculta)
-  actualizarPreseleccion();
+  if (id === 'cantidad') {
+    promocionSeleccionada = null;
+    await cargarPromocionesConfig();
+    actualizarPreseleccion();
+  }
+  
+  if (id === 'pago') {
+    const promo = getPromocionSeleccionada();
+    const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
+    document.getElementById('monto-pago').textContent = monto.toFixed(2);
   }
   // 4) Acciones por sección
   if (id === 'cartones') {
     await cargarCartones(); // ← importante usar await
   }
 
-  if (id === 'pago') {
-    // 👇 Aquí sí va el monto con promo
-    const monto = promoSeleccionada
-      ? promoPrecioTotal
-      : (usuario.cartones.length * (precioPorCarton || 0));
-    document.getElementById('monto-pago').textContent = monto.toFixed(2);
-  }
-
   if (id === 'lista-aprobados') {
     await cargarListaAprobadosSeccion();
+    // Agrega esta función helper que se usa en mostrarVentana()
   }
 }
 
@@ -280,14 +283,18 @@ function toggleCarton(num, elem) {
  
 function actualizarMonto() {
   let total;
-  if (promoSeleccionada) {
-    total = promoPrecioTotal;
+  const promo = getPromocionSeleccionada();
+  
+  if (promo && usuario.cartones.length === promo.cantidad) {
+    total = promo.precio;
   } else {
     total = (usuario.cartones.length || 0) * (precioPorCarton || 0);
   }
+  
   const nodo = document.getElementById('monto-total');
   if (nodo) nodo.textContent = total.toFixed(2);
 }
+
 
 
 // Subir comprobante y guardar en Supabase
@@ -339,10 +346,8 @@ async function enviarComprobante() {
       await cargarCartones();
       return;
     }
-const monto = promoSeleccionada
-  ? (promoPrecioTotal || 0)
-  : ( (usuario.cartones.length || 0) * (precioPorCarton || 0) );
-
+const promo = getPromocionSeleccionada();
+const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
     // Si llegamos aquí, los cartones SON NUESTROS ⇒ ahora guardamos inscripción
     const { error: errorInsert } = await supabase.from('inscripciones').insert([{
       nombre: usuario.nombre,
@@ -354,9 +359,9 @@ const monto = promoSeleccionada
       comprobante: urlPublica,
       estado: 'pendiente',
        monto_bs: monto,
-  usa_promo: !!promoSeleccionada,
-  promo_desc: promoSeleccionada ? (promoDescripcion || '') : null,
-  precio_unitario_bs: promoSeleccionada ? null : (precioPorCarton || 0)
+  usa_promo: !!promo,
+promo_desc: promo ? promo.descripcion : null,
+   precio_unitario_bs: promo ? null : (precioPorCarton || 0) 
     }]);
 
     if (errorInsert) {
@@ -1183,7 +1188,7 @@ async function cargarPanelAdmin() {
   await contarCartonesVendidos();
   await cargarModoCartonesAdmin();
   await cargarCartones(); // ← asegúrate de que esto se llama
-  await cargarPromoAdminForm();
+  await cargarPromocionesAdmin();
 
 }
 let modoCartones = "libre";
@@ -1784,37 +1789,61 @@ async function liberarHuerfanos() {
 
 document.getElementById('btnVerHuerfanos')?.addEventListener('click', verHuerfanos);
 document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
-async function cargarPromocionConfig() {
-  const a = await getConfigValue('promo_activa', 'false');
-  promoActiva = (a === true || a === 'true' || a === 1 || a === '1');
 
-  promoCantidad     = parseInt(await getConfigValue('promo_cantidad', '0')) || 0;
-  promoPrecioTotal  = parseFloat(await getConfigValue('promo_precio_total', '0')) || 0;
-  promoDescripcion  = await getConfigValue('promo_descripcion', '') || '';
+
+async function cargarPromocionesConfig() {
+  try {
+    for (let i = 0; i < promociones.length; i++) {
+      const promo = promociones[i];
+      const prefix = `promo${i + 1}`;
+      
+      promo.activa = (await getConfigValue(`${prefix}_activa`, 'false')) === 'true';
+      promo.descripcion = await getConfigValue(`${prefix}_descripcion`, `Promo ${i + 1}`);
+      promo.cantidad = parseInt(await getConfigValue(`${prefix}_cantidad`, '0')) || 0;
+      promo.precio = parseFloat(await getConfigValue(`${prefix}_precio`, '0')) || 0;
+    }
+    
+    console.log('Promociones cargadas:', promociones);
+    renderizarBotonesPromociones();
+  } catch (error) {
+    console.error('Error cargando promociones:', error);
+  }
 }
 
-function renderPromocionEnCantidad() {
-  const box = document.getElementById('promoBox');
-  const btn = document.getElementById('btnUsarPromo');
-  const det = document.getElementById('promoDetalle');
-  if (!box || !btn || !det) return;
 
-  if (!promoActiva || !promoCantidad || !promoPrecioTotal) {
-    box.classList.add('oculto');
-    return;
-  }
+function renderizarBotonesPromociones() {
+  const promoBox = document.getElementById('promoBox');
+  if (!promoBox) return;
 
-  // Texto visible del botón promocional
-  btn.textContent = promoDescripcion || `Promo: ${promoCantidad} cartones por ${promoPrecioTotal.toFixed(2)} Bs`;
-
-  // Pequeño cálculo de ahorro (opcional)
-  const ahorro = (promoCantidad * (precioPorCarton || 0)) - promoPrecioTotal;
-  det.textContent = (ahorro > 0)
-    ? `Ahorro estimado: ${ahorro.toFixed(2)} Bs`
-    : `Precio paquete: ${promoPrecioTotal.toFixed(2)} Bs`;
-
-  box.classList.remove('oculto');
-  btn.onclick = usarPromocion;
+  let algunaActiva = false;
+  
+  promociones.forEach((promo, index) => {
+    const boton = document.querySelector(`[data-promo="${index + 1}"]`);
+    const descElement = document.getElementById(`promo-desc-${index + 1}`);
+    const precioElement = document.getElementById(`promo-precio-${index + 1}`);
+    
+    if (boton && descElement && precioElement) {
+      if (promo.activa && promo.cantidad > 0 && promo.precio > 0) {
+        descElement.textContent = promo.descripcion;
+        precioElement.textContent = `${promo.precio.toFixed(2)} Bs`;
+        boton.classList.remove('desactivado');
+        algunaActiva = true;
+        
+        // Actualizar tooltip
+        boton.title = `${promo.cantidad} cartones por ${promo.precio.toFixed(2)} Bs`;
+      } else {
+        descElement.textContent = `Promo ${index + 1} (No disponible)`;
+        precioElement.textContent = 'No disponible';
+        boton.classList.add('desactivado');
+      }
+      
+      // Remover selección anterior
+      boton.classList.remove('seleccionado');
+    }
+  });
+  
+  // Mostrar/ocultar contenedor según si hay promociones activas
+  promoBox.classList.toggle('oculto', !algunaActiva);
 }
 
 function usarPromocion() {
@@ -1830,64 +1859,79 @@ function usarPromocion() {
   actualizarMonto();
 }
 
-document.getElementById('guardarPromoBtn').addEventListener('click', async () => {
-  const activa = document.getElementById('promoActivaChk').checked;
-  const desc   = document.getElementById('promoDescripcion').value.trim();
-  const cant   = parseInt(document.getElementById('promoCantidad').value);
-  const precio = parseFloat(document.getElementById('promoPrecio').value);
-  const estado = document.getElementById('estadoPromo');
 
-  if (activa && (!cant || cant < 1 || isNaN(precio) || precio <= 0)) {
-    alert('Completa cantidad y precio válidos para activar la promoción.');
-    return;
+// Cargar configuración de 4 promociones en admin
+async function cargarPromocionesAdmin() {
+  try {
+    for (let i = 1; i <= 4; i++) {
+      document.getElementById(`promo${i}_activa`).checked = 
+        (await getConfigValue(`promo${i}_activa`, 'false')) === 'true';
+      document.getElementById(`promo${i}_descripcion`).value = 
+        await getConfigValue(`promo${i}_descripcion`, '');
+      document.getElementById(`promo${i}_cantidad`).value = 
+        parseInt(await getConfigValue(`promo${i}_cantidad`, '0')) || '';
+      document.getElementById(`promo${i}_precio`).value = 
+        parseFloat(await getConfigValue(`promo${i}_precio`, '0')) || '';
+    }
+  } catch (error) {
+    console.error('Error cargando promociones en admin:', error);
   }
-
-  const ups = [
-    { clave: 'promo_activa',       valore: String(activa) },
-    { clave: 'promo_descripcion',  valore: desc || '' },
-    { clave: 'promo_cantidad',     valore: String(cant || 0) },
-    { clave: 'promo_precio_total', valore: String(precio || 0) },
-  ];
-
-  const { error } = await supabase.from('configuracion').upsert(ups, { onConflict: 'clave' });
-  if (error) {
-    estado.textContent = 'Error guardando promoción';
-    console.error(error);
-  } else {
-    estado.textContent = 'Promoción guardada';
-    // refresca variables locales + UI
-    promoActiva      = activa;
-    promoDescripcion = desc;
-    promoCantidad    = cant || 0;
-    promoPrecioTotal = precio || 0;
-    renderPromocionEnCantidad();
-  }
-});
-async function cargarPromoAdminForm() {
-  const a = await getConfigValue('promo_activa', 'false');
-  const d = await getConfigValue('promo_descripcion', '');
-  const c = await getConfigValue('promo_cantidad', '0');
-  const p = await getConfigValue('promo_precio_total', '0');
-
-  const chk = document.getElementById('promoActivaChk');
-  const inpD = document.getElementById('promoDescripcion');
-  const inpC = document.getElementById('promoCantidad');
-  const inpP = document.getElementById('promoPrecio');
-
-  if (chk) chk.checked = (a === true || a === 'true' || a === 1 || a === '1');
-  if (inpD) inpD.value = d || '';
-  if (inpC) inpC.value = parseInt(c) || 0;
-  if (inpP) inpP.value = parseFloat(p) || 0;
 }
+
+// Guardar las 4 promociones
+async function guardarPromociones() {
+  const estado = document.getElementById('estadoPromociones');
+  
+  try {
+    const updates = [];
+    
+    for (let i = 1; i <= 4; i++) {
+      const activa = document.getElementById(`promo${i}_activa`).checked;
+      const desc = document.getElementById(`promo${i}_descripcion`).value.trim();
+      const cant = parseInt(document.getElementById(`promo${i}_cantidad`).value) || 0;
+      const precio = parseFloat(document.getElementById(`promo${i}_precio`).value) || 0;
+      
+      updates.push(
+        { clave: `promo${i}_activa`, valore: String(activa) },
+        { clave: `promo${i}_descripcion`, valore: desc },
+        { clave: `promo${i}_cantidad`, valore: String(cant) },
+        { clave: `promo${i}_precio`, valore: String(precio) }
+      );
+    }
+    
+    const { error } = await supabase.from('configuracion').upsert(updates, { onConflict: 'clave' });
+    
+    if (error) {
+      estado.textContent = 'Error guardando promociones';
+      estado.style.color = 'red';
+    } else {
+      estado.textContent = '✅ Todas las promociones guardadas correctamente';
+      estado.style.color = 'green';
+      
+      // Recargar configuración
+      await cargarPromocionesConfig();
+      
+      setTimeout(() => {
+        estado.textContent = '';
+      }, 3000);
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    estado.textContent = 'Error inesperado al guardar';
+    estado.style.color = 'red';
+  }
+}
+
+// Agregar event listener en cargarPanelAdmin
+document.getElementById('guardarPromocionesBtn')?.addEventListener('click', guardarPromociones);
 
 function resetPromo() {
   promoSeleccionada = false;
 }
+// Cambia esta función para usar el nuevo sistema
 function limpiarPromoPorCambioCantidad() {
-  if (promoSeleccionada) {
-    promoSeleccionada = false;
-    // opcional: feedback visual si quieres
-    // renderPromocionEnCantidad();
+  if (promocionSeleccionada) {
+    deseleccionarPromocion(); // ← Usar la nueva función
   }
   actualizarPreseleccion();
 }
@@ -2109,4 +2153,85 @@ async function detectarDuplicadosAprobadosPorReferencia() {
 
   // (Opcional) También podríamos resaltar en la tabla de "listaAprobados",
   // pero esa tabla no muestra la referencia. Si quieres, puedo agregarte la columna.
+}
+function seleccionarPromocion(numero) {
+  const promo = promociones[numero - 1];
+  
+  // Validar que la promoción esté activa y disponible
+  if (!promo.activa || promo.cantidad <= 0 || promo.precio <= 0) {
+    alert('Esta promoción no está disponible en este momento.');
+    return;
+  }
+  
+  // Validar stock de cartones
+  const maxDisponibles = totalCartones - cartonesOcupados.length;
+  if (promo.cantidad > maxDisponibles) {
+    alert(`No hay suficientes cartones disponibles para esta promoción. Disponibles: ${maxDisponibles}`);
+    return;
+  }
+  
+  // Deseleccionar promoción anterior
+  if (promocionSeleccionada === numero) {
+    deseleccionarPromocion();
+    return;
+  }
+  
+  // Seleccionar nueva promoción
+  promocionSeleccionada = numero;
+  
+  // Actualizar UI
+  document.querySelectorAll('.btn-promo').forEach(btn => {
+    btn.classList.remove('seleccionado');
+  });
+  
+  const botonSeleccionado = document.querySelector(`[data-promo="${numero}"]`);
+  if (botonSeleccionado) {
+    botonSeleccionado.classList.add('seleccionado');
+  }
+  
+  // Actualizar cantidad y monto
+  document.getElementById('cantidadCartones').value = promo.cantidad;
+  actualizarPreseleccion();
+  
+  // Feedback visual
+  console.log(`Promoción ${numero} seleccionada: ${promo.cantidad} cartones por ${promo.precio} Bs`);
+}
+
+// Deseleccionar promoción
+function deseleccionarPromocion() {
+  promocionSeleccionada = null;
+  document.querySelectorAll('.btn-promo').forEach(btn => {
+    btn.classList.remove('seleccionado');
+  });
+  
+  // Resetear a cantidad mínima
+  document.getElementById('cantidadCartones').value = 1;
+  actualizarPreseleccion();
+}
+// Obtener promoción seleccionada
+function getPromocionSeleccionada() {
+  return promocionSeleccionada ? promociones[promocionSeleccionada - 1] : null;
+}
+// Agrega esta función que falta
+function generarCartones() {
+  console.log(`Sistema listo para ${totalCartones} cartones`);
+  // Esta función es llamada en DOMContentLoaded pero no existe
+}
+// Agrega esta función que se referencia pero no existe
+async function cargarPromocionesAdmin() {
+  try {
+    for (let i = 1; i <= 4; i++) {
+      const activa = await getConfigValue(`promo${i}_activa`, 'false');
+      const desc = await getConfigValue(`promo${i}_descripcion`, '');
+      const cant = await getConfigValue(`promo${i}_cantidad`, '0');
+      const precio = await getConfigValue(`promo${i}_precio`, '0');
+      
+      document.getElementById(`promo${i}_activa`).checked = activa === 'true';
+      document.getElementById(`promo${i}_descripcion`).value = desc;
+      document.getElementById(`promo${i}_cantidad`).value = parseInt(cant) || '';
+      document.getElementById(`promo${i}_precio`).value = parseFloat(precio) || '';
+    }
+  } catch (error) {
+    console.error('Error cargando promociones en admin:', error);
+  }
 }
