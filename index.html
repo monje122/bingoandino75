@@ -94,10 +94,33 @@
 
   <p>Total a pagar: <strong><span id="monto-preseleccion">0</span> Bs</strong></p>
 
-  <div id="promoBox" class="oculto" style="margin:16px 0;">
-  <button id="btnUsarPromo" class="btn-promo"></button>
-  <small id="promoDetalle" style="display:block;margin-top:6px;opacity:.85;"></small>
-</div>
+  <div id="promoBox" class="oculto" style="margin: 20px 0;">
+    <h3 style="color: #FFA500; margin-bottom: 15px;">🎯 Promociones Disponibles</h3>
+    <div class="grid-promociones">
+      <button class="btn-promo" data-promo="1" onclick="seleccionarPromocion(1)">
+        <span class="promo-desc" id="promo-desc-1">Promo 1</span>
+        <span class="promo-precio" id="promo-precio-1">0 Bs</span>
+      </button>
+      
+      <button class="btn-promo" data-promo="2" onclick="seleccionarPromocion(2)">
+        <span class="promo-desc" id="promo-desc-2">Promo 2</span>
+        <span class="promo-precio" id="promo-precio-2">0 Bs</span>
+      </button>
+      
+      <button class="btn-promo" data-promo="3" onclick="seleccionarPromocion(3)">
+        <span class="promo-desc" id="promo-desc-3">Promo 3</span>
+        <span class="promo-precio" id="promo-precio-3">0 Bs</span>
+      </button>
+      
+      <button class="btn-promo" data-promo="4" onclick="seleccionarPromocion(4)">
+        <span class="promo-desc" id="promo-desc-4">Promo 4</span>
+        <span class="promo-precio" id="promo-precio-4">0 Bs</span>
+      </button>
+    </div>
+    <small style="display: block; margin-top: 10px; color: #666;">
+      💡 Selecciona una promoción o elige la cantidad manualmente
+    </small>
+  </div>
 
   
   <button type="button" onclick="confirmarCantidad()">Continuar</button>
@@ -211,19 +234,64 @@
     <button id="btnDuplicados">🔍 Detectar cartones duplicados</button>
 <div id="duplicadosResultado" style="margin-top:10px;"></div>
 
-    <h3>Promoción</h3>
-<label style="display:flex;gap:8px;align-items:center;margin:8px 0;">
-  <input type="checkbox" id="promoActivaChk"> Activar promoción
-</label>
+   <!-- Configuración de 4 Promociones -->
+<h3>🎯 Configuración de 4 Promociones</h3>
 
-<div class="grid-promo">
-  <input type="text" id="promoDescripcion" placeholder="Descripción (ej: 4x por 120 Bs)">
-  <input type="number" id="promoCantidad" min="1" step="1" placeholder="Cantidad (ej: 4)">
-  <input type="number" id="promoPrecio" min="0" step="0.01" placeholder="Precio total en Bs (ej: 120.00)">
+<div class="grid-promociones-admin">
+  <!-- Promo 1 -->
+  <div class="promo-admin-card">
+    <h4>Promoción 1</h4>
+    <div class="promo-control">
+      <input type="checkbox" id="promo1_activa" class="promo-activa">
+      <label for="promo1_activa">Activar</label>
+    </div>
+    <input type="text" id="promo1_descripcion" placeholder="Descripción (ej: Pack Familiar 5x4)" class="promo-input">
+    <input type="number" id="promo1_cantidad" placeholder="Cantidad cartones" min="1" class="promo-input">
+    <input type="number" id="promo1_precio" placeholder="Precio total Bs" min="0" step="0.01" class="promo-input">
+  </div>
+
+  <!-- Promo 2 -->
+  <div class="promo-admin-card">
+    <h4>Promoción 2</h4>
+    <div class="promo-control">
+      <input type="checkbox" id="promo2_activa" class="promo-activa">
+      <label for="promo2_activa">Activar</label>
+    </div>
+    <input type="text" id="promo2_descripcion" placeholder="Descripción" class="promo-input">
+    <input type="number" id="promo2_cantidad" placeholder="Cantidad cartones" min="1" class="promo-input">
+    <input type="number" id="promo2_precio" placeholder="Precio total Bs" min="0" step="0.01" class="promo-input">
+  </div>
+
+  <!-- Promo 3 -->
+  <div class="promo-admin-card">
+    <h4>Promoción 3</h4>
+    <div class="promo-control">
+      <input type="checkbox" id="promo3_activa" class="promo-activa">
+      <label for="promo3_activa">Activar</label>
+    </div>
+    <input type="text" id="promo3_descripcion" placeholder="Descripción" class="promo-input">
+    <input type="number" id="promo3_cantidad" placeholder="Cantidad cartones" min="1" class="promo-input">
+    <input type="number" id="promo3_precio" placeholder="Precio total Bs" min="0" step="0.01" class="promo-input">
+  </div>
+
+  <!-- Promo 4 -->
+  <div class="promo-admin-card">
+    <h4>Promoción 4</h4>
+    <div class="promo-control">
+      <input type="checkbox" id="promo4_activa" class="promo-activa">
+      <label for="promo4_activa">Activar</label>
+    </div>
+    <input type="text" id="promo4_descripcion" placeholder="Descripción" class="promo-input">
+    <input type="number" id="promo4_cantidad" placeholder="Cantidad cartones" min="1" class="promo-input">
+    <input type="number" id="promo4_precio" placeholder="Precio total Bs" min="0" step="0.01" class="promo-input">
+  </div>
 </div>
 
-<button id="guardarPromoBtn">Guardar promoción</button>
-<p id="estadoPromo" style="margin:6px 0 14px 0;"></p>
+<button id="guardarPromocionesBtn" style="background: #00b894; color: white; padding: 12px 20px; border: none; border-radius: 8px; cursor: pointer; margin-top: 15px;">
+  💾 Guardar Todas las Promociones
+</button>
+
+<p id="estadoPromociones" style="margin-top: 10px; font-weight: bold;"></p>
 
     
 <h4>Subir imágenes de cartones</h4>
