@@ -358,3 +358,92 @@ a[href*="wa.me"]:hover {
 .resaltado-dup {
   background: rgba(255, 215, 0, 0.22); /* amarillo suave */
 }
+.grid-promociones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 15px 0;
+}
+
+.btn-promo {
+  background: linear-gradient(135deg, #00b894, #00a085);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 15px 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-height: 70px;
+}
+
+.btn-promo:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 184, 148, 0.3);
+  filter: brightness(1.1);
+}
+
+.btn-promo.seleccionado {
+  background: linear-gradient(135deg, #e17055, #d63031);
+  border: 3px solid #FFA500;
+}
+
+.promo-desc {
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.promo-precio {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.btn-promo.desactivado {
+  background: #bdc3c7;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-promo.desactivado:hover {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+.grid-promociones-admin {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin: 20px 0;
+}
+
+.promo-admin-card {
+  border: 2px solid #ddd;
+  border-radius: 10px;
+  padding: 15px;
+  background: #f8f9fa;
+}
+
+.promo-admin-card h4 {
+  margin: 0 0 10px 0;
+  color: #2d3436;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 5px;
+}
+
+.promo-control {
+  margin-bottom: 10px;
+}
+
+.promo-input {
+  width: 100%;
+  padding: 8px;
+  margin: 5px 0;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
