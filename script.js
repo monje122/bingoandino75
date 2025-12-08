@@ -593,8 +593,46 @@ document.getElementById('cerrarVentasBtn').addEventListener('click', async () =>
 
 // Reiniciar base de datos
 async function reiniciarTodo() {
-  if (!confirm('¿Estás seguro de reiniciar todo?')) return;
-
+  // 1. Primera confirmación
+  if (!confirm('⚠️ ¿Estás seguro de reiniciar todo?\n\nEsto borrará todos los datos permanentemente.')) {
+    return;
+  }
+  
+  // 2. Pedir clave de seguridad
+  const claveIngresada = prompt('🔒 INGRESA LA CLAVE DE SEGURIDAD PARA CONTINUAR:');
+  
+  if (!claveIngresada) {
+    alert('❌ Operación cancelada. No se ingresó clave.');
+    return;
+  }
+  
+  // 3. Obtener clave desde Supabase
+  const { data: claveData, error } = await supabase
+    .from('configuracion')
+    .select('valore')
+    .eq('clave', 'clave_reinicio')
+    .single();
+  
+  if (error || !claveData) {
+    alert('❌ Error del sistema. No se pudo verificar la clave.');
+    return;
+  }
+  
+  const claveCorrecta = claveData.valore;
+  
+  // 4. Verificar clave
+  if (claveIngresada.trim() !== claveCorrecta) {
+    alert('❌ CLAVE INCORRECTA\n\nOperación cancelada por seguridad.');
+    return;
+  }
+  
+  // 5. Segunda confirmación
+  if (!confirm('🔥 ÚLTIMA CONFIRMACIÓN\n\n¿Estás ABSOLUTAMENTE seguro?\n\nEsto NO se puede deshacer.')) {
+    alert('✅ Operación cancelada.');
+    return;
+  }
+  
+  // 6. Proceder con el reinicio original
   // 1) Tablas
   await supabase.from('inscripciones').delete().neq('cedula', '');
   await supabase.from('cartones').delete().neq('numero', 0);
@@ -627,7 +665,7 @@ async function reiniciarTodo() {
     offset += pageSize;
   }
 
-  alert(`Datos reiniciados. Comprobantes eliminados: ${totalEliminados}`);
+  alert(`✅ Datos reiniciados. Comprobantes eliminados: ${totalEliminados}`);
   location.reload();
 }
 
