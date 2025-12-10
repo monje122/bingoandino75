@@ -1,6 +1,44 @@
 const supabaseUrl = 'https://dbkixcpwirjwjvjintkr.supabase.co';
 const supabase = window.supabase.createClient(supabaseUrl, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho');
 
+// Configuración del admin
+const ADMIN_EMAIL = 'elmonje662@gmail.com';
+
+// Variables globales
+let cartonesOcupados = [];
+let precioPorCarton = 0;
+let cantidadPermitida = 0;
+let promocionSeleccionada = null;
+let modoCartones = "libre";
+let cantidadFijaCartones = 1;
+let promoSeleccionada = false;
+
+// Variables de sesión
+let adminSession = null;
+let sesionActiva = false;
+
+// Timeout de sesión (30 minutos)
+const SESSION_TIMEOUT = 30 * 60 * 1000;
+let inactivityTimer;
+
+const promociones = [
+  { id: 1, activa: false, descripcion: '', cantidad: 0, precio: 0 },
+  { id: 2, activa: false, descripcion: '', cantidad: 0, precio: 0 },
+  { id: 3, activa: false, descripcion: '', cantidad: 0, precio: 0 },
+  { id: 4, activa: false, descripcion: '', cantidad: 0, precio: 0 }
+];
+
+let usuario = {
+  nombre: '',
+  telefono: '',
+  cedula: '',
+  referido: '',
+  cartones: [],
+};
+
+let totalCartones = 0;
+
+// ==================== FUNCIONES DE CONFIGURACIÓN ====================
 async function getConfigValue(clave, fallback = null) {
   const { data, error } = await supabase
     .from('configuracion')
@@ -19,44 +57,345 @@ async function setConfigValue(clave, value) {
   return !error;
 }
 
+// ==================== SISTEMA DE AUTENTICACIÓN ====================
+// Función para crear la tabla de sesiones activas
+async function crearTablaSesiones() {
+  const { error } = await supabase
+    .from('sesiones_activas')
+    .upsert([
+      {
+        tipo: 'admin',
+        user_id: null,
+        activa: false,
+        ultima_actividad: new Date().toISOString()
+      }
+    ], { onConflict: 'tipo' });
+    
+  if (error && !error.message.includes('duplicate')) {
+    console.error('Error creando tabla sesiones:', error);
+  }
+}
 
-// Variables globales
-let cartonesOcupados = [];
-let precioPorCarton = 0;
-let cantidadPermitida = 0;
-let promocionSeleccionada = null; 
+// Función para verificar sesión activa
+async function verificarSesionActiva() {
+  try {
+    const { data: sesionData, error } = await supabase
+      .from('sesiones_activas')
+      .select('*')
+      .eq('tipo', 'admin')
+      .single();
+      
+    if (error) {
+      if (error.code === 'PGRST116') {
+        await crearTablaSesiones();
+        return false;
+      }
+      console.error('Error verificando sesión:', error);
+      return false;
+    }
+    
+    if (sesionData && sesionData.activa) {
+      const ultimaActividad = new Date(sesionData.ultima_actividad);
+      const ahora = new Date();
+      const minutosDesdeUltimaActividad = (ahora - ultimaActividad) / (1000 * 60);
+      
+      if (minutosDesdeUltimaActividad > 30) {
+        await actualizarSesionActiva(null, false);
+        return false;
+      }
+      
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Error en verificarSesionActiva:', error);
+    return false;
+  }
+}
 
-const promociones = [
-  { id: 1, activa: false, descripcion: '', cantidad: 0, precio: 0 },
-  { id: 2, activa: false, descripcion: '', cantidad: 0, precio: 0 },
-  { id: 3, activa: false, descripcion: '', cantidad: 0, precio: 0 },
-  { id: 4, activa: false, descripcion: '', cantidad: 0, precio: 0 }
-];
+// Función para actualizar sesión activa
+async function actualizarSesionActiva(userId, activa) {
+  try {
+    const { error } = await supabase
+      .from('sesiones_activas')
+      .upsert({
+        tipo: 'admin',
+        user_id: userId,
+        activa: activa,
+        ultima_actividad: new Date().toISOString()
+      }, { onConflict: 'tipo' });
+      
+    return !error;
+  } catch (error) {
+    console.error('Error actualizando sesión:', error);
+    return false;
+  }
+}
 
+// Función para actualizar actividad
+async function actualizarActividadSesion() {
+  if (sesionActiva) {
+    await supabase
+      .from('sesiones_activas')
+      .update({ ultima_actividad: new Date().toISOString() })
+      .eq('tipo', 'admin');
+  }
+}
 
-let usuario = {
-  nombre: '',
-  telefono: '',
-  cedula: '',
-  referido: '',
-  cartones: [],
+// Timer de inactividad
+function resetInactivityTimer() {
+  clearTimeout(inactivityTimer);
+  if (sesionActiva) {
+    inactivityTimer = setTimeout(async () => {
+      if (sesionActiva) {
+        alert('Sesión expirada por inactividad');
+        await cerrarSesionAdmin();
+      }
+    }, SESSION_TIMEOUT);
+  }
+}
 
-};
+// Eventos para detectar actividad
+function iniciarDetectorActividad() {
+  ['click', 'mousemove', 'keypress', 'scroll'].forEach(event => {
+    document.addEventListener(event, () => {
+      if (sesionActiva) {
+        actualizarActividadSesion();
+        resetInactivityTimer();
+      }
+    });
+  });
+}
+
+// Función de login
+async function loginAdmin() {
+  const email = document.getElementById('admin-email').value.trim();
+  const password = document.getElementById('admin-password').value;
+  const errorDiv = document.getElementById('admin-error');
+  
+  errorDiv.textContent = '';
+  
+  if (!email || !password) {
+    errorDiv.textContent = 'Por favor ingresa email y contraseña';
+    return;
+  }
+  
+  try {
+    // Verificar si ya hay sesión activa
+    const haySesionActiva = await verificarSesionActiva();
+    if (haySesionActiva) {
+      const { data: currentSession } = await supabase.auth.getSession();
+      if (currentSession.session?.user?.email === email) {
+        // Es la misma sesión, continuar
+        sesionActiva = true;
+        mostrarPanelAdmin();
+        return;
+      } else {
+        errorDiv.textContent = 'Ya hay una sesión de administrador activa. Cierre la otra sesión primero.';
+        return;
+      }
+    }
+    
+    // Intentar login con Supabase Auth
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+    
+    if (error) {
+      if (error.message.includes('Invalid login credentials')) {
+        errorDiv.textContent = 'Credenciales incorrectas';
+      } else {
+        errorDiv.textContent = error.message;
+      }
+      return;
+    }
+    
+    // Verificar que sea el admin único
+    if (data.user.email !== ADMIN_EMAIL) {
+      await supabase.auth.signOut();
+      errorDiv.textContent = 'No tiene permisos de administrador';
+      return;
+    }
+    
+    // Registrar sesión activa
+    await actualizarSesionActiva(data.user.id, true);
+    
+    // Guardar sesión
+    adminSession = data.session;
+    sesionActiva = true;
+    
+    // Mostrar panel admin
+    document.getElementById('admin-email-display').textContent = data.user.email;
+    await mostrarPanelAdmin();
+    
+    // Iniciar detector de actividad
+    iniciarDetectorActividad();
+    resetInactivityTimer();
+    
+  } catch (error) {
+    console.error('Error login:', error);
+    errorDiv.textContent = 'Error al iniciar sesión';
+  }
+}
+
+// Función para cerrar sesión
+async function cerrarSesionAdmin() {
+  try {
+    // Limpiar sesión activa
+    await actualizarSesionActiva(null, false);
+    
+    // Cerrar sesión en Supabase
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error('Error cerrando sesión:', error);
+    
+    // Limpiar variables
+    adminSession = null;
+    sesionActiva = false;
+    clearTimeout(inactivityTimer);
+    
+    // Limpiar formulario
+    document.getElementById('admin-email').value = '';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('admin-error').textContent = '';
+    
+    // Volver a login
+    mostrarVentana('admin-login');
+    
+  } catch (error) {
+    console.error('Error en cerrarSesionAdmin:', error);
+  }
+}
+
+// Función para mostrar panel admin
+async function mostrarPanelAdmin() {
+  // Ocultar login y mostrar panel
+  document.getElementById('admin-login').classList.add('oculto');
+  document.getElementById('admin-panel').classList.remove('oculto');
+  
+  // Cargar datos del panel
+  await cargarPanelAdmin();
+}
+
+// Entrar al panel admin
+async function entrarAdmin() {
+  // Verificar si ya está autenticado
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (session) {
+    // Verificar que sea el admin único
+    if (session.user.email === ADMIN_EMAIL) {
+      // Verificar que no haya otra sesión activa
+      const haySesionActiva = await verificarSesionActiva();
+      if (haySesionActiva) {
+        // Verificar si es la misma sesión
+        const { data: sesionData } = await supabase
+          .from('sesiones_activas')
+          .select('user_id')
+          .eq('tipo', 'admin')
+          .single();
+          
+        if (sesionData?.user_id === session.user.id) {
+          // Es la misma sesión, mostrar panel
+          adminSession = session;
+          sesionActiva = true;
+          document.getElementById('admin-email-display').textContent = session.user.email;
+          await mostrarPanelAdmin();
+          iniciarDetectorActividad();
+          resetInactivityTimer();
+          return;
+        } else {
+          // Otra sesión está activa
+          alert('Ya hay una sesión de administrador activa en otro dispositivo/navegador.');
+          mostrarVentana('admin-login');
+          return;
+        }
+      } else {
+        // No hay sesión activa, iniciar nueva
+        adminSession = session;
+        sesionActiva = true;
+        await actualizarSesionActiva(session.user.id, true);
+        document.getElementById('admin-email-display').textContent = session.user.email;
+        await mostrarPanelAdmin();
+        iniciarDetectorActividad();
+        resetInactivityTimer();
+        return;
+      }
+    } else {
+      // No es el admin, cerrar sesión
+      await cerrarSesionAdmin();
+    }
+  }
+  
+  // Mostrar formulario de login
+  mostrarVentana('admin-login');
+}
+
+// Verificar sesión al cargar la página
+async function verificarSesionInicial() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session && session.user.email === ADMIN_EMAIL) {
+      const haySesionActiva = await verificarSesionActiva();
+      if (haySesionActiva) {
+        const { data: sesionData } = await supabase
+          .from('sesiones_activas')
+          .select('user_id')
+          .eq('tipo', 'admin')
+          .single();
+          
+        if (sesionData?.user_id === session.user.id) {
+          // Sesión válida
+          adminSession = session;
+          sesionActiva = true;
+          document.getElementById('admin-email-display').textContent = session.user.email;
+          iniciarDetectorActividad();
+          resetInactivityTimer();
+        } else {
+          // Otra sesión está activa
+          await cerrarSesionAdmin();
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error verificando sesión inicial:', error);
+  }
+}
+
+// ==================== FUNCIONES PRINCIPALES ====================
 window.addEventListener('DOMContentLoaded', async () => {
   await obtenerTotalCartones();
   await cargarPrecioPorCarton();
   await cargarConfiguracionModoCartones();
   generarCartones();
-  await cargarPromocionesConfig();  // ← Cambiar por el nuevo sistema
-  // renderPromocionEnCantidad();   // ← Eliminar esta línea
-   const guardianPromotion = document.getElementById("guardarPromocionesBtn");
-  if (guardianPromotion) {
-    guardianPromotion.addEventListener('click', guardarPromociones);
-  }
+  await cargarPromocionesConfig();
+  
+  // Verificar sesión al cargar
+  await verificarSesionInicial();
+  
+  // Event listeners
+  document.getElementById('guardarPromocionesBtn')?.addEventListener('click', guardarPromociones);
+  document.getElementById('btnDupNombreAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorNombre);
+  document.getElementById('btnDupReferenciaAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorReferencia);
+  document.getElementById('btnDuplicados')?.addEventListener('click', detectarCartonesDuplicados);
+  document.getElementById('btnVerHuerfanos')?.addEventListener('click', verHuerfanos);
+  document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
+  document.getElementById('guardarPrecioBtn')?.addEventListener('click', guardarPrecioPorCarton);
+  document.getElementById('cerrarVentasBtn')?.addEventListener('click', cerrarVentas);
+  document.getElementById('abrirVentasBtn')?.addEventListener('click', abrirVentas);
+  document.getElementById('imprimirListaBtn')?.addEventListener('click', imprimirLista);
+  document.getElementById('verListaBtn')?.addEventListener('click', verListaAprobados);
+  document.getElementById('guardarModoCartonesBtn')?.addEventListener('click', guardarModoCartones);
+  document.getElementById('modoCartonesSelect')?.addEventListener('change', cambiarModoCartones);
+  
+  // Cargar link de WhatsApp
+  await cargarLinkWhatsapp();
+  
+  // Mostrar términos
+  document.getElementById('modal-terminos').classList.remove('oculto');
 });
 
-let totalCartones = 0;
- 
 async function obtenerTotalCartones() {
   const { data, error } = await supabase
     .from('configuracion')
@@ -81,6 +420,11 @@ async function cargarPrecioPorCarton() {
     precioPorCarton = 0;
   }
 }
+
+function generarCartones() {
+  console.log(`Sistema de bingo inicializado con ${totalCartones} cartones disponibles`);
+}
+
 function actualizarPreseleccion() {
   const cant = parseInt(document.getElementById('cantidadCartones').value) || 1;
   const maxDisponibles = totalCartones - cartonesOcupados.length;
@@ -92,53 +436,36 @@ function actualizarPreseleccion() {
 }
 
 // botones + y −
-document.getElementById('btnMas').onclick   = () => {
+document.getElementById('btnMas').onclick = () => {
   document.getElementById('cantidadCartones').stepUp();
-  actualizarPreseleccion();
+  limpiarPromoPorCambioCantidad();
 };
+
 document.getElementById('btnMenos').onclick = () => {
   document.getElementById('cantidadCartones').stepDown();
-  actualizarPreseleccion();
+  limpiarPromoPorCambioCantidad();
 };
 
 // detectar tecleo manual
-document.getElementById('cantidadCartones').addEventListener('input', actualizarPreseleccion);
+document.getElementById('cantidadCartones').addEventListener('input', limpiarPromoPorCambioCantidad);
 
-function confirmarCantidad() {
-  const promo = getPromocionSeleccionada();
-  let cant;
-  
-  if (promo) {
-    // Usar cantidad de la promoción
-    cant = promo.cantidad;
-  } else {
-    // Usar cantidad manual
-    cant = parseInt(document.getElementById('cantidadCartones').value);
-    const maxDisponibles = totalCartones - cartonesOcupados.length;
-    
-    if (modoCartones === 'fijo') {
-      if (cant !== cantidadFijaCartones) {
-        return alert(`Debes seleccionar exactamente ${cantidadFijaCartones} cartones.`);
-      }
-    } else {
-      if (isNaN(cant) || cant < 1) {
-        return alert('Ingresa un número válido');
-      }
-      if (cant > maxDisponibles) {
-        return alert(`Solo quedan ${maxDisponibles} cartones disponibles`);
-      }
-    }
+function limpiarPromoPorCambioCantidad() {
+  if (promocionSeleccionada) {
+    deseleccionarPromocion();
   }
-  
-  cantidadPermitida = cant;
-  usuario.cartones = [];
-  mostrarVentana('cartones');
+  actualizarPreseleccion();
 }
+
 function isTrue(v) {
   return v === true || v === 'true' || v === 1 || v === '1';
 }
 
 async function mostrarVentana(id) {
+  if (id === 'admin') {
+    await entrarAdmin();
+    return;
+  }
+  
   // 1) Si va a CARTONES, valida ventas_abierta
   if (id === 'cartones') {
     const { data } = await supabase
@@ -156,8 +483,7 @@ async function mostrarVentana(id) {
     }
   }
 
-
-  // 2) Si va a PAGO, valida cantidad exacta (modo fijo o libre/promo)
+  // 2) Si va a PAGO, valida cantidad exacta
   if (id === 'pago') {
     const requerido = (modoCartones === 'fijo') ? cantidadFijaCartones : cantidadPermitida;
     if (usuario.cartones.length !== requerido) {
@@ -182,14 +508,13 @@ async function mostrarVentana(id) {
     const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
     document.getElementById('monto-pago').textContent = monto.toFixed(2);
   }
-  // 4) Acciones por sección
+  
   if (id === 'cartones') {
-    await cargarCartones(); // ← importante usar await
+    await cargarCartones();
   }
 
   if (id === 'lista-aprobados') {
     await cargarListaAprobadosSeccion();
-    // Agrega esta función helper que se usa en mostrarVentana()
   }
 }
 
@@ -204,11 +529,39 @@ function guardarDatosInscripcion() {
   actualizarPreseleccion(); 
 }
 
-// Cargar y mostrar cartones con imagen y modal
+function confirmarCantidad() {
+  const promo = getPromocionSeleccionada();
+  let cant;
+  
+  if (promo) {
+    cant = promo.cantidad;
+  } else {
+    cant = parseInt(document.getElementById('cantidadCartones').value);
+    const maxDisponibles = totalCartones - cartonesOcupados.length;
+    
+    if (modoCartones === 'fijo') {
+      if (cant !== cantidadFijaCartones) {
+        return alert(`Debes seleccionar exactamente ${cantidadFijaCartones} cartones.`);
+      }
+    } else {
+      if (isNaN(cant) || cant < 1) {
+        return alert('Ingresa un número válido');
+      }
+      if (cant > maxDisponibles) {
+        return alert(`Solo quedan ${maxDisponibles} cartones disponibles`);
+      }
+    }
+  }
+  
+  cantidadPermitida = cant;
+  usuario.cartones = [];
+  mostrarVentana('cartones');
+}
+
+// ==================== FUNCIONES DE CARTONES ====================
 async function cargarCartones() {
-  // 🔁 Trae TODOS los ocupados (en páginas de 1000)
   cartonesOcupados = await fetchTodosLosOcupados();
-  const ocupadosSet = new Set(cartonesOcupados); // O(1) para la verificación
+  const ocupadosSet = new Set(cartonesOcupados);
 
   const contenedor = document.getElementById('contenedor-cartones');
   contenedor.innerHTML = '';
@@ -219,14 +572,13 @@ async function cargarCartones() {
     carton.classList.add('carton');
 
     if (ocupadosSet.has(i)) {
-      carton.classList.add('ocupado');  // ← rojo
+      carton.classList.add('ocupado');
     } else {
       carton.onclick = () => abrirModalCarton(i, carton);
     }
     contenedor.appendChild(carton);
   }
 
-  // contador real (sin límite 1000)
   await contarCartonesVendidos();
   actualizarContadorCartones(
     totalCartones,
@@ -236,18 +588,13 @@ async function cargarCartones() {
   actualizarMonto();
 }
 
-
-
-// Marcar/desmarcar cartones
 function toggleCarton(num, elem) {
   const index = usuario.cartones.indexOf(num);
 
-  // Deseleccionar
   if (index >= 0) {
     usuario.cartones.splice(index, 1);
     elem.classList.remove('seleccionado');
 
-    // 🔓 Desbloquear solo los cartones bloqueados temporalmente (no los ocupados reales)
     document.querySelectorAll('.carton.bloqueado').forEach(c => {
       const n = parseInt(c.textContent);
       if (!cartonesOcupados.includes(n) && !usuario.cartones.includes(n)) {
@@ -255,15 +602,12 @@ function toggleCarton(num, elem) {
         c.onclick = () => abrirModalCarton(n, c);
       }
     });
-
   } else {
-    // Evita seleccionar más de los permitidos
     if (usuario.cartones.length >= cantidadPermitida) return;
 
     usuario.cartones.push(num);
     elem.classList.add('seleccionado');
 
-    // 🔒 Si alcanzó el límite, bloquear el resto
     if (usuario.cartones.length === cantidadPermitida) {
       document.querySelectorAll('.carton').forEach(c => {
         const n = parseInt(c.textContent);
@@ -280,7 +624,7 @@ function toggleCarton(num, elem) {
   actualizarContadorCartones(totalCartones, cartonesOcupados.length, usuario.cartones.length);
   actualizarMonto();
 }
- 
+
 function actualizarMonto() {
   let total;
   const promo = getPromocionSeleccionada();
@@ -295,9 +639,7 @@ function actualizarMonto() {
   if (nodo) nodo.textContent = total.toFixed(2);
 }
 
-
-
-// Subir comprobante y guardar en Supabase
+// ==================== FUNCIONES DE PAGO ====================
 async function enviarComprobante() {
   const boton = document.getElementById('btnEnviarComprobante');
   const textoOriginal = boton.textContent;
@@ -305,7 +647,6 @@ async function enviarComprobante() {
   boton.textContent = 'Cargando comprobante...';
 
   try {
-    // Validaciones básicas...
     if (!usuario.nombre || !usuario.telefono || !usuario.cedula) {
       throw new Error('Debes completar primero los datos de inscripción');
     }
@@ -318,7 +659,6 @@ async function enviarComprobante() {
     const archivo = document.getElementById('comprobante').files[0];
     if (!archivo) throw new Error('Debes subir un comprobante');
 
-    // Subir comprobante
     const ext = archivo.name.split('.').pop();
     const nombreArchivo = `${usuario.cedula}-${Date.now()}.${ext}`;
     const { error: errorUpload } = await supabase.storage
@@ -328,27 +668,22 @@ async function enviarComprobante() {
 
     const urlPublica = `${supabaseUrl}/storage/v1/object/public/comprobantes/${nombreArchivo}`;
 
-    // -------- PASO CLAVE: reservar cartones primero --------
-    // Intento insertar TODOS los cartones de una
-    // (si hay uno duplicado, Postgres lanza conflicto y NO se crea la inscripción)
     const rows = usuario.cartones.map(n => ({ numero: n }));
     const { error: errInsertaCartones } = await supabase
       .from('cartones')
-      .insert(rows);  // requiere UNIQUE en cartones.numero
+      .insert(rows);
 
     if (errInsertaCartones) {
-      // Conflicto típico: errInsertaCartones.code === '23505'
-      // (según versión puede venir en errInsertaCartones.details o message)
       alert('Uno o más cartones ya fueron tomados por otra persona. Elige otros, por favor.');
-      // UX: volver a selección de cartones y refrescar estado
       usuario.cartones = [];
       mostrarVentana('cartones');
       await cargarCartones();
       return;
     }
-const promo = getPromocionSeleccionada();
-const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
-    // Si llegamos aquí, los cartones SON NUESTROS ⇒ ahora guardamos inscripción
+
+    const promo = getPromocionSeleccionada();
+    const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
+    
     const { error: errorInsert } = await supabase.from('inscripciones').insert([{
       nombre: usuario.nombre,
       telefono: usuario.telefono,
@@ -358,32 +693,29 @@ const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton
       referencia4dig: referencia4dig,
       comprobante: urlPublica,
       estado: 'pendiente',
-       monto_bs: monto,
-  usa_promo: !!promo,
-promo_desc: promo ? promo.descripcion : null,
-   precio_unitario_bs: promo ? null : (precioPorCarton || 0) 
+      monto_bs: monto,
+      usa_promo: !!promo,
+      promo_desc: promo ? promo.descripcion : null,
+      precio_unitario_bs: promo ? null : (precioPorCarton || 0) 
     }]);
 
     if (errorInsert) {
-      // Si falló la inscripción, liberamos cartones recién tomados para no dejarlos “fantasma”
       await supabase.from('cartones').delete().in('numero', usuario.cartones);
       throw new Error('Error guardando la inscripción');
     }
 
     alert('Inscripción y comprobante enviados con éxito');
-    location.reload(); // o redirige a “pago” si quieres
+    location.reload();
   } catch (err) {
     console.error(err);
     alert(err.message || 'Ocurrió un error inesperado');
-    // En caso de error, te asegurás de que el usuario NO vaya al admin,
-    // y lo regresas a selección si venía de ahí:
-    // (opcional) mostrarVentana('cartones');
   } finally {
     boton.disabled = false;
     boton.textContent = textoOriginal;
   }
 }
-// Consultar cartones por cédula
+
+// ==================== FUNCIONES DE USUARIO ====================
 async function consultarCartones() {
   const cedula = document.getElementById('consulta-cedula').value;
   const { data } = await supabase.from('inscripciones').select('*').eq('cedula', cedula);
@@ -393,111 +725,40 @@ async function consultarCartones() {
     item.cartones.forEach(num => {
       const img = document.createElement('img');
       img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BINGOANDINO75_CARTON_${String(num).padStart(5, '0')}.jpg`;
-
       img.style.width = '100px';
       img.style.margin = '5px';
       cont.appendChild(img);
     });
   });
 }
-usuario.cartones = [];
 
-// Entrar al panel admin
-async function entrarAdmin() {
-  const claveIngresada = document.getElementById("clave-admin").value;
+async function elegirMasCartones() {
+  const cedula = document.getElementById('consulta-cedula').value;
+  const { data, error } = await supabase.from('inscripciones').select('*').eq('cedula', cedula);
 
-  const { data: claveData, error: claveError } = await supabase
-    .from('configuracion')
-    .select('valore')
-    .eq('clave', 'clave_admin')
-    .single();
-
-  if (claveError) {
-    alert("Error consultando la clave.");
-    return;
+  if (error || data.length === 0) {
+    return alert('No se encontró ningún usuario con esa cédula');
   }
 
-  if (claveIngresada === claveData.valore) {
-    document.getElementById("panel-admin").classList.remove("oculto");
-    await cargarPanelAdmin();
-  } else {
-    alert("Clave incorrecta.");
-  }
+  const inscripcion = data[0];
+  usuario.nombre = inscripcion.nombre;
+  usuario.telefono = inscripcion.telefono;
+  usuario.cedula = inscripcion.cedula;
+  usuario.referido = inscripcion.referido;
+  usuario.cartones = [];
 
-  // Mostrar panel si la clave es correcta
+  mostrarVentana('cantidad');
+  actualizarPreseleccion();
+}
+
+// ==================== FUNCIONES DEL PANEL ADMIN ====================
+async function cargarPanelAdmin() {
+  await obtenerMontoTotalRecaudado();
+  await contarCartonesVendidos();
+  await cargarModoCartonesAdmin();
+  await cargarCartones();
+  await cargarPromocionesAdmin();
   
-  obtenerMontoTotalRecaudado();
-  contarCartonesVendidos();
-obtenerMontoTotalRecaudado();
-  
-  contarCartonesVendidos();
-  
-  document.getElementById('btnDupNombreAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorNombre);
-document.getElementById('btnDupReferenciaAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorReferencia);
-
-  
-document.getElementById('verListaBtn').addEventListener('click', async () => {
-  const { data, error } = await supabase
-    .from('inscripciones')
-    .select('*')
-    .eq('estado', 'aprobado'); // Cambia esto si tu campo se llama distinto
-
-  const listaDiv = document.getElementById('listaAprobados');
-  listaDiv.innerHTML = ''; // Limpiar antes de insertar
-
-  if (error) {
-    console.error('Error al obtener aprobados:', error);
-    listaDiv.innerHTML = '<p>Error al obtener la lista.</p>';
-    return;
-  }
-
-  if (data.length === 0) {
-    listaDiv.innerHTML = '<p>No hay personas aprobadas.</p>';
-    return;
-  }
- // Mostrar la lista
-// Crear tabla
-  const tabla = document.createElement('table');
-  tabla.style.width = '100%';
-  tabla.style.borderCollapse = 'collapse';
-  tabla.innerHTML = `
-    <thead>
-      <tr>
-        <th style="border: 1px solid #ccc; padding: 8px;">Nombre</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Cédula</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Referido</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Teléfono</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Cartones</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-
-  const tbody = tabla.querySelector('tbody');
-
-  // Agregar cada aprobado como fila
-  data.forEach(item => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.nombre}</td>
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.cedula}</td>
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.referido}</td>
-      <td style="border: 1px solid #ccc; padding: 8px;">
-  <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, tu inscripción fue aprobada.`)}"
-     target="_blank" rel="noopener">
-    ${item.telefono}
-  </a>
-</td>
-
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.cartones.join(', ')}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  listaDiv.appendChild(tabla);
-});
-
-  // Traemos TODAS las inscripciones
   const { data, error } = await supabase
     .from('inscripciones')
     .select('*')
@@ -508,30 +769,26 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
     return alert('Error cargando inscripciones');
   }
 
-  // Llenamos la tabla
   const tbody = document.querySelector('#tabla-comprobantes tbody');
-  tbody.innerHTML = ''; // limpia antes de pintar
+  tbody.innerHTML = '';
 
   data.forEach(item => {
     const tr = document.createElement('tr');
-
     tr.innerHTML = `
       <td>${item.nombre}</td>
       <td>
-  <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, te escribo de parte del equipo de bingoandino75.`)}"
-     target="_blank" rel="noopener">
-    ${item.telefono}
-  </a>
-</td>
-
+        <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, te escribo de parte del equipo de bingoandino75.`)}"
+           target="_blank" rel="noopener">
+          ${item.telefono}
+        </a>
+      </td>
       <td>${item.cedula}</td>
       <td>${item.referido}</td>
-       <td>${item.cartones.join(', ')}</td>
-       <td class="celda-ref" data-id="${item.id}">
-  <span class="ref-text">${item.referencia4dig || ''}</span>
-  <button class="btn-accion btn-edit-ref" title="Editar">&#9998;</button>
-</td>
-
+      <td>${item.cartones.join(', ')}</td>
+      <td class="celda-ref" data-id="${item.id}">
+        <span class="ref-text">${item.referencia4dig || ''}</span>
+        <button class="btn-accion btn-edit-ref" title="Editar">&#9998;</button>
+      </td>
       <td><a href="${item.comprobante}" target="_blank">
             <img src="${item.comprobante}" alt="Comp.">
           </a></td>
@@ -543,19 +800,16 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
       </td>
     `;
 
-    // ===== acciones =====
-    const btnAprobar  = tr.querySelector('.btn-aprobar');
+    const btnAprobar = tr.querySelector('.btn-aprobar');
     const btnRechazar = tr.querySelector('.btn-rechazar');
     const btnEliminar = tr.querySelector('.btn-eliminar');
     const btnEditRef = tr.querySelector('.btn-edit-ref');
-
-
 
     btnAprobar.onclick = () => aprobarInscripcion(item.id, tr);
     btnRechazar.onclick = () => rechazarInscripcion(item, tr);
     btnEliminar.onclick = () => eliminarInscripcion(item, tr);
     btnEditRef.onclick = () => editarReferencia(tr.querySelector('.celda-ref'));
-    // Si la inscripción ya fue procesada, inhabilitamos los botones
+    
     if (item.estado === 'aprobado') {
       btnAprobar.disabled = true;
       btnRechazar.disabled = true;
@@ -567,19 +821,89 @@ document.getElementById('verListaBtn').addEventListener('click', async () => {
     tbody.appendChild(tr);
   });
 
-  // Contadores
-  document.getElementById('contadorCartones').innerText = 
-  `Cartones disponibles: ${totalCartones - cartonesOcupados.length} de ${totalCartones}`;
-
   document.getElementById('contador-clientes').textContent = data.length;
+  document.getElementById('contadorCartones').innerText = 
+    `Cartones disponibles: ${totalCartones - cartonesOcupados.length} de ${totalCartones}`;
 }
-document.getElementById('cerrarVentasBtn').addEventListener('click', async () => {
+
+async function aprobarInscripcion(id, fila) {
+  const { error } = await supabase
+    .from('inscripciones')
+    .update({ estado: 'aprobado' })
+    .eq('id', id);
+
+  if (error) {
+    console.error(error);
+    return alert('No se pudo aprobar');
+  }
+
+  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
+  const circulo = fila.querySelector('.estado-circulo');
+  if (circulo) circulo.classList.replace('rojo', 'verde');
+  alert('¡Inscripción aprobada!');
+}
+
+async function rechazarInscripcion(item, fila) {
+  const confirma = confirm('¿Seguro que deseas rechazar y liberar cartones?');
+  if (!confirma) return;
+
+  if (item.cartones.length) {
+    const { error: errCart } = await supabase
+      .from('cartones')
+      .delete()
+      .in('numero', item.cartones);
+    if (errCart) {
+      console.error(errCart);
+      return alert('Error liberando cartones');
+    }
+  }
+
+  const { error: errUpd } = await supabase
+    .from('inscripciones')
+    .update({ estado: 'rechazado' })
+    .eq('id', item.id);
+
+  if (errUpd) {
+    console.error(errUpd);
+    return alert('Error actualizando inscripción');
+  }
+
+  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
+  alert('Inscripción rechazada y cartones liberados');
+}
+
+async function eliminarInscripcion(item, fila) {
+  const confirmar = confirm('¿Eliminar esta inscripción? Se liberarán solo los cartones que nadie más tenga.');
+  if (!confirmar) return;
+
+  try {
+    const { data, error } = await supabase.rpc('rpc_eliminar_inscripcion_seguro', { _id: item.id });
+    if (error) throw error;
+
+    if (item.comprobante) {
+      const nombreArchivo = item.comprobante.split('/').pop();
+      await supabase.storage.from('comprobantes').remove([nombreArchivo]);
+    }
+
+    fila.remove();
+    await contarCartonesVendidos();
+    await obtenerMontoTotalRecaudado();
+    await cargarCartones();
+
+    alert(`Inscripción eliminada. Cartones liberados: ${data ?? 0}`);
+  } catch (e) {
+    console.error(e);
+    alert('Error al eliminar inscripción.');
+  }
+}
+
+async function cerrarVentas() {
   const confirmacion = confirm("¿Estás seguro que quieres cerrar las ventas?");
   if (!confirmacion) return;
 
   const { error } = await supabase
     .from('configuracion')
-    .update({ valor: false }) // o 'false' si la columna es texto
+    .update({ valor: false })
     .eq('clave', 'ventas_abierta');
 
   if (error) {
@@ -587,18 +911,33 @@ document.getElementById('cerrarVentasBtn').addEventListener('click', async () =>
     console.error(error);
   } else {
     alert("Ventas cerradas correctamente");
-    location.reload(); // Opcional: recargar para que se apliquen cambios
+    location.reload();
   }
-});
+}
 
-// Reiniciar base de datos
+async function abrirVentas() {
+  const confirmacion = confirm("¿Estás seguro que quieres abrir las ventas?");
+  if (!confirmacion) return;
+
+  const { error } = await supabase
+    .from('configuracion')
+    .update({ valor: true })
+    .eq('clave', 'ventas_abierta');
+
+  if (error) {
+    alert("Error al abrir las ventas");
+    console.error(error);
+  } else {
+    alert("Ventas abiertas correctamente");
+    location.reload();
+  }
+}
+
 async function reiniciarTodo() {
-  // 1. Primera confirmación
   if (!confirm('⚠️ ¿Estás seguro de reiniciar todo?\n\nEsto borrará todos los datos permanentemente.')) {
     return;
   }
   
-  // 2. Pedir clave de seguridad
   const claveIngresada = prompt('🔒 INGRESA LA CLAVE DE SEGURIDAD PARA CONTINUAR:');
   
   if (!claveIngresada) {
@@ -606,7 +945,6 @@ async function reiniciarTodo() {
     return;
   }
   
-  // 3. Obtener clave desde Supabase
   const { data: claveData, error } = await supabase
     .from('configuracion')
     .select('valore')
@@ -620,24 +958,19 @@ async function reiniciarTodo() {
   
   const claveCorrecta = claveData.valore;
   
-  // 4. Verificar clave
   if (claveIngresada.trim() !== claveCorrecta) {
     alert('❌ CLAVE INCORRECTA\n\nOperación cancelada por seguridad.');
     return;
   }
   
-  // 5. Segunda confirmación
   if (!confirm('🔥 ÚLTIMA CONFIRMACIÓN\n\n¿Estás ABSOLUTAMENTE seguro?\n\nEsto NO se puede deshacer.')) {
     alert('✅ Operación cancelada.');
     return;
   }
   
-  // 6. Proceder con el reinicio original
-  // 1) Tablas
   await supabase.from('inscripciones').delete().neq('cedula', '');
   await supabase.from('cartones').delete().neq('numero', 0);
 
-  // 2) Storage: borrar TODOS los comprobantes (paginado + batch)
   let totalEliminados = 0;
   const pageSize = 1500;
   let offset = 0;
@@ -669,13 +1002,10 @@ async function reiniciarTodo() {
   location.reload();
 }
 
-
-// Variables para modal
+// ==================== FUNCIONES DE MODAL ====================
 let cartonSeleccionadoTemporal = null;
 let cartonElementoTemporal = null;
 
-
-// Abrir modal con imagen del cartón
 function abrirModalCarton(numero, elemento) {
   cartonSeleccionadoTemporal = numero;
   cartonElementoTemporal = elemento;
@@ -696,270 +1026,14 @@ function cerrarModalCarton() {
   cartonSeleccionadoTemporal = null;
   cartonElementoTemporal = null;
 }
+
 function actualizarContadorCartones(total, ocupados, seleccionados) {
   const disponibles = total - ocupados - seleccionados;
   const contador = document.getElementById('contadorCartones');
   contador.textContent = `Cartones disponibles: ${disponibles} de ${total}`;
 }
-async function elegirMasCartones() {
-  const cedula = document.getElementById('consulta-cedula').value;
 
-  // Consultar datos del usuario por cédula
-  const { data, error } = await supabase.from('inscripciones').select('*').eq('cedula', cedula);
-
-  if (error || data.length === 0) {
-    return alert('No se encontró ningún usuario con esa cédula');
-  }
-
-  const inscripcion = data[0];
-
-  // Asignar los datos al usuario actual
-  usuario.nombre = inscripcion.nombre;
-  usuario.telefono = inscripcion.telefono;
-  usuario.cedula = inscripcion.cedula;
-  usuario.referido = inscripcion.referido;
-  usuario.cartones = [];
-
-  // Ir a pantalla de selección
-
-  mostrarVentana('cantidad');      // 👈 aquí va a la nueva ventana
-  actualizarPreseleccion();    
-}
-document.getElementById('abrirVentasBtn').addEventListener('click', async () => {
-  const confirmacion = confirm("¿Estás seguro que quieres abrir las ventas?");
-  if (!confirmacion) return;
-
-  const { error } = await supabase
-    .from('configuracion')
-    .update({ valor: true })  // poner ventas_abierta = true
-    .eq('clave', 'ventas_abierta');
-
-  if (error) {
-    alert("Error al abrir las ventas");
-    console.error(error);
-  } else {
-    alert("Ventas abiertas correctamente");
-    location.reload(); // Opcional: recargar para que se apliquen cambios
-  }
-});
-// Aprobar = simplemente marcar la inscripción como "aprobado"
-async function aprobarInscripcion(id, fila) {
-  const { error } = await supabase
-    .from('inscripciones')
-    .update({ estado: 'aprobado' })
-    .eq('id', id);
-
-  if (error) {
-    console.error(error);
-    return alert('No se pudo aprobar');
-  }
-
-  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
-
-  const circulo = fila.querySelector('.estado-circulo');
-  if (circulo) circulo.classList.replace('rojo', 'verde');
-
-  alert('¡Inscripción aprobada!');
-}
-
-// Rechazar = borrar los cartones ocupados y marcar "rechazado"
-async function rechazarInscripcion(item, fila) {
-  const confirma = confirm('¿Seguro que deseas rechazar y liberar cartones?');
-  if (!confirma) return;
-
-  // 1. Liberar cartones ocupados
-  if (item.cartones.length) {
-    const { error: errCart } = await supabase
-      .from('cartones')
-      .delete()
-      .in('numero', item.cartones);
-    if (errCart) {
-      console.error(errCart);
-      return alert('Error liberando cartones');
-    }
-  }
-
-  // 2. Marcar inscripción como rechazada
-  const { error: errUpd } = await supabase
-    .from('inscripciones')
-    .update({ estado: 'rechazado' })
-    .eq('id', item.id);
-
-  if (errUpd) {
-    console.error(errUpd);
-    return alert('Error actualizando inscripción');
-  }
-
-  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
-  alert('Inscripción rechazada y cartones liberados');
-}
-async function rechazar(inscripcionId, cartones, comprobanteURL) {
-  // 1. Liberar los cartones en Supabase
-  for (let numero of cartones) {
-    await supabase
-      .from('cartones')
-      .update({ disponible: true })
-      .eq('numero', numero);
-  }
-
-  // 2. Eliminar la inscripción
-  await supabase
-    .from('inscripciones')
-    .delete()
-    .eq('id', inscripcionId);
-
-  // 3. (Opcional) Eliminar la imagen del comprobante si quieres
-  const filename = comprobanteURL.split('/').pop(); // obtén el nombre del archivo
-  await supabase
-    .storage
-    .from('comprobantes')
-    .remove([filename]);
-
-  // 4. Recargar la lista
-  cargarInscripciones(); // o la función que actualiza la tabla
-}
-async function rechazarInscripcion(item, tr) {
-  const confirmar = confirm('¿Estás seguro de rechazar esta inscripción? Esto eliminará los datos y liberará los cartones.');
-  if (!confirmar) return;
-
-  // Eliminar inscripción de la tabla "inscripciones"
-  const { error: deleteError } = await supabase
-    .from('inscripciones')
-    .delete()
-    .eq('id', item.id);
-
-  if (deleteError) {
-    console.error(deleteError);
-    alert('Error al eliminar la inscripción');
-    return;
-  }
-
-  // Eliminar los cartones asignados
-  for (const numero of item.cartones) {
-    await supabase
-      .from('cartones')
-      .delete()
-      .eq('numero', numero);
-  }
-
-  // Eliminar comprobante del storage si existe
-  const urlSplit = item.comprobante.split('/');
-  const nombreArchivo = urlSplit[urlSplit.length - 1];
-
-  await supabase.storage.from('comprobantes').remove([nombreArchivo]);
-
-  // Eliminar fila de la tabla visual
-  tr.remove();
-  alert('Inscripción rechazada y eliminada correctamente');
-}
-async function subirCartones() {
-  const input = document.getElementById('cartonImageInput');
-  const files = input.files;
-  const status = document.getElementById('uploadStatus');
-  status.innerHTML = '';
-
-  if (!files.length) {
-    alert('Selecciona al menos una imagen');
-    return;
-  }
-
-  // Mostrar mensaje de carga
-  status.innerHTML = '<p style="color:blue;">Cargando imágenes...</p>';
-
-  const errores = [];
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const fileName = file.name;
-
-    try {
-      const { error } = await supabase.storage
-        .from('cartones')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: true
-        });
-
-      if (error) {
-        errores.push(`Error subiendo ${fileName}: ${error.message}`);
-      }
-    } catch (err) {
-      errores.push(`Error inesperado en ${fileName}`);
-    }
-  }
-
-  // Limpiar input
-  input.value = '';
-
-  // Mostrar resultado
-  if (errores.length) {
-    status.innerHTML = `<p style="color:red;">Se encontraron errores:</p><ul>${errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
-  } else {
-    status.innerHTML = '<p style="color:green;">¡Todas las imágenes fueron subidas exitosamente!</p>';
-  }
-
-  // (Opcional) Borrar el mensaje después de unos segundos
-  setTimeout(() => {
-    status.innerHTML = '';
-  }, 5000); // 5 segundos
-}
-async function borrarCartones() {
-  const claveCorrecta = "1234admin"; // puedes cambiarla por una más segura
-  const claveIngresada = prompt("Ingrese la clave de seguridad para borrar todos los cartones:");
-
-  if (claveIngresada !== claveCorrecta) {
-    alert("Clave incorrecta. No se borraron los cartones.");
-    return;
-  }
-
-  const status = document.getElementById('deleteStatus');
-  status.innerHTML = 'Cargando lista de imágenes...';
-
-  // Paso 1: Obtener la lista de imágenes
-  const { data: list, error: listError } = await supabase.storage
-    .from('cartones')
-    .list('', { limit: 1000 });
-
-  if (listError) {
-    status.innerHTML = `<p style="color:red;">Error listando imágenes: ${listError.message}</p>`;
-    return;
-  }
-
-  if (!list.length) {
-    status.innerHTML = '<p style="color:orange;">No hay imágenes para borrar.</p>';
-    return;
-  }
-
-  // Paso 2: Borrar
-  const fileNames = list.map(file => file.name);
-
-  const { error: deleteError } = await supabase.storage
-    .from('cartones')
-    .remove(fileNames);
-
-  if (deleteError) {
-    status.innerHTML = `<p style="color:red;">Error al borrar imágenes: ${deleteError.message}</p>`;
-  } else {
-    status.innerHTML = `<p style="color:green;">Se borraron ${fileNames.length} imágenes exitosamente.</p>`;
-  }
-
-  setTimeout(() => {
-    status.innerHTML = '';
-  }, 5000);
-}
-function mostrarSeccion(id) {
-  const secciones = document.querySelectorAll('section');
-  secciones.forEach(sec => sec.classList.add('oculto'));
-
-  const target = document.getElementById(id);
-  if (target) target.classList.remove('oculto');
-
-  // Mostrar redes solo en la sección de inicio
-  const redes = document.getElementById('redes-sociales');
-  if (redes) {
-    redes.style.display = id === 'inicio' ? 'flex' : 'none';
-  }
-}
+// ==================== FUNCIONES AUXILIARES ====================
 async function guardarNuevoTotal() {
   const nuevoTotal = parseInt(document.getElementById("nuevoTotalCartones").value, 10);
   const estado = document.getElementById("estadoTotalCartones");
@@ -969,7 +1043,6 @@ async function guardarNuevoTotal() {
     return;
   }
 
-  // Usar UPSERT por clave para crear/actualizar la fila 'total_cartones'
   const { error } = await supabase
     .from('configuracion')
     .upsert(
@@ -985,10 +1058,11 @@ async function guardarNuevoTotal() {
     totalCartones = nuevoTotal;
   }
 }
+
 async function contarCartonesVendidos() {
   const { count, error } = await supabase
     .from('cartones')
-    .select('numero', { count: 'exact', head: true }); // ← solo el COUNT, sin filas
+    .select('numero', { count: 'exact', head: true });
 
   if (error) {
     console.error('Error al contar cartones:', error);
@@ -996,8 +1070,8 @@ async function contarCartonesVendidos() {
   }
   document.getElementById('total-vendidos').textContent = count || 0;
 }
-const obtenerMontoTotalRecaudado = async () => {
-  // Si prefieres contar solo aprobados: añade .eq('estado', 'aprobado')
+
+async function obtenerMontoTotalRecaudado() {
   const { data, error } = await supabase
     .from('inscripciones')
     .select('monto_bs, cartones');
@@ -1011,7 +1085,6 @@ const obtenerMontoTotalRecaudado = async () => {
   for (const ins of (data || [])) {
     let m = Number(ins.monto_bs);
     if (!(m > 0)) {
-      // 🔙 Fallback para inscripciones viejas sin monto_bs
       const unidades = Array.isArray(ins.cartones) ? ins.cartones.length : 0;
       m = unidades * (precioPorCarton || 0);
     }
@@ -1020,72 +1093,172 @@ const obtenerMontoTotalRecaudado = async () => {
 
   document.getElementById('totalMonto').textContent =
     new Intl.NumberFormat('es-VE', { style: 'currency', currency: 'VES' }).format(total);
-};
+}
 
-
-// Llama la función cuando cargue el admin
-obtenerMontoTotalRecaudado();
-// Variable global para el precio
-
-// Función para cargar el precio desde Supabase al iniciar el admin
-async function cargarPrecioPorCarton() {
-  const { data, error } = await supabase
-    .from('configuracion')
-    .select('valore')
-    .eq('clave', 'precio_por_carton')
-    .single();
-
-  if (error) {
-    console.error('Error cargando precio por cartón:', error);
-  } else if (data) {
-    precioPorCarton = parseFloat(data.valore);
-    document.getElementById('precioCarton').value = precioPorCarton;
+async function cargarPromocionesConfig() {
+  try {
+    for (let i = 0; i < promociones.length; i++) {
+      const promo = promociones[i];
+      const prefix = `promo${i + 1}`;
+      
+      promo.activa = (await getConfigValue(`${prefix}_activa`, 'false')) === 'true';
+      promo.descripcion = await getConfigValue(`${prefix}_descripcion`, `Promo ${i + 1}`);
+      promo.cantidad = parseInt(await getConfigValue(`${prefix}_cantidad`, '0')) || 0;
+      promo.precio = parseFloat(await getConfigValue(`${prefix}_precio`, '0')) || 0;
+    }
+    
+    console.log('Promociones cargadas:', promociones);
+    renderizarBotonesPromociones();
+  } catch (error) {
+    console.error('Error cargando promociones:', error);
   }
 }
 
-// Función para guardar el precio nuevo al hacer clic en el botón
-document.getElementById('guardarPrecioBtn').addEventListener('click', async () => {
-  const nuevoPrecio = parseFloat(document.getElementById('precioCarton').value);
-  if (isNaN(nuevoPrecio) || nuevoPrecio < 0) {
-    alert('Ingrese un precio válido');
+function renderizarBotonesPromociones() {
+  const promoBox = document.getElementById('promoBox');
+  if (!promoBox) return;
+
+  let algunaActiva = false;
+  
+  promociones.forEach((promo, index) => {
+    const boton = document.querySelector(`[data-promo="${index + 1}"]`);
+    const descElement = document.getElementById(`promo-desc-${index + 1}`);
+    const precioElement = document.getElementById(`promo-precio-${index + 1}`);
+    
+    if (boton && descElement && precioElement) {
+      if (promo.activa && promo.cantidad > 0 && promo.precio > 0) {
+        descElement.textContent = promo.descripcion;
+        precioElement.textContent = `${promo.precio.toFixed(2)} Bs`;
+        boton.classList.remove('desactivado');
+        algunaActiva = true;
+        boton.title = `${promo.cantidad} cartones por ${promo.precio.toFixed(2)} Bs`;
+      } else {
+        descElement.textContent = `Promo ${index + 1} (No disponible)`;
+        precioElement.textContent = 'No disponible';
+        boton.classList.add('desactivado');
+      }
+      boton.classList.remove('seleccionado');
+    }
+  });
+  
+  promoBox.classList.toggle('oculto', !algunaActiva);
+}
+
+async function cargarPromocionesAdmin() {
+  try {
+    for (let i = 1; i <= 4; i++) {
+      document.getElementById(`promo${i}_activa`).checked = 
+        (await getConfigValue(`promo${i}_activa`, 'false')) === 'true';
+      document.getElementById(`promo${i}_descripcion`).value = 
+        await getConfigValue(`promo${i}_descripcion`, '');
+      document.getElementById(`promo${i}_cantidad`).value = 
+        parseInt(await getConfigValue(`promo${i}_cantidad`, '0')) || '';
+      document.getElementById(`promo${i}_precio`).value = 
+        parseFloat(await getConfigValue(`promo${i}_precio`, '0')) || '';
+    }
+  } catch (error) {
+    console.error('Error cargando promociones en admin:', error);
+  }
+}
+
+async function guardarPromociones() {
+  const estado = document.getElementById('estadoPromociones');
+  
+  try {
+    const updates = [];
+    
+    for (let i = 1; i <= 4; i++) {
+      const activa = document.getElementById(`promo${i}_activa`).checked;
+      const desc = document.getElementById(`promo${i}_descripcion`).value.trim();
+      const cant = parseInt(document.getElementById(`promo${i}_cantidad`).value) || 0;
+      const precio = parseFloat(document.getElementById(`promo${i}_precio`).value) || 0;
+      
+      updates.push(
+        { clave: `promo${i}_activa`, valore: String(activa) },
+        { clave: `promo${i}_descripcion`, valore: desc },
+        { clave: `promo${i}_cantidad`, valore: String(cant) },
+        { clave: `promo${i}_precio`, valore: String(precio) }
+      );
+    }
+    
+    const { error } = await supabase.from('configuracion').upsert(updates, { onConflict: 'clave' });
+    
+    if (error) {
+      estado.textContent = 'Error guardando promociones';
+      estado.style.color = 'red';
+    } else {
+      estado.textContent = '✅ Todas las promociones guardadas correctamente';
+      estado.style.color = 'green';
+      await cargarPromocionesConfig();
+      setTimeout(() => { estado.textContent = ''; }, 3000);
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    estado.textContent = 'Error inesperado al guardar';
+    estado.style.color = 'red';
+  }
+}
+
+function seleccionarPromocion(numero) {
+  const promo = promociones[numero - 1];
+  
+  if (!promo.activa || promo.cantidad <= 0 || promo.precio <= 0) {
+    alert('Esta promoción no está disponible en este momento.');
     return;
   }
-
-  const { error } = await supabase
-    .from('configuracion')
-    .update({ valore: nuevoPrecio })
-    .eq('clave', 'precio_por_carton');
-
-  if (error) {
-    alert('Error guardando el precio');
-    console.error(error);
-  } else {
-    alert('Precio actualizado correctamente');
-    precioPorCarton = nuevoPrecio;
-    // Aquí puedes llamar a la función que actualiza el monto en pantalla
-    actualizarMonto();
-  }
-});
-
-// Llama esta función cuando entres al panel admin para cargar el precio
-async function iniciarAdmin() {
-  await cargarPrecioPorCarton();
-  // Resto de código para iniciar panel admin...
-}
-
-function actualizarMonto() {
-  const cantidadCartones = usuario.cartones.length || 0;
-  const total = cantidadCartones * precioPorCarton;
-  document.getElementById('monto-total').textContent = total.toFixed(2);
-}
-document.getElementById('imprimirListaBtn').addEventListener('click', () => {
-  const lista = document.getElementById('listaAprobados');
-  if (!lista.innerHTML.trim()) {
-    alert('Primero debes generar la lista de aprobados.');
+  
+  const maxDisponibles = totalCartones - cartonesOcupados.length;
+  if (promo.cantidad > maxDisponibles) {
+    alert(`No hay suficientes cartones disponibles para esta promoción. Disponibles: ${maxDisponibles}`);
     return;
   }
-  window.print();
-});
+  
+  if (promocionSeleccionada === numero) {
+    deseleccionarPromocion();
+    return;
+  }
+  
+  promocionSeleccionada = numero;
+  
+  document.querySelectorAll('.btn-promo').forEach(btn => {
+    btn.classList.remove('seleccionado');
+  });
+  
+  const botonSeleccionado = document.querySelector(`[data-promo="${numero}"]`);
+  if (botonSeleccionado) {
+    botonSeleccionado.classList.add('seleccionado');
+  }
+  
+  document.getElementById('cantidadCartones').value = promo.cantidad;
+  actualizarPreseleccion();
+}
+
+function deseleccionarPromocion() {
+  promocionSeleccionada = null;
+  document.querySelectorAll('.btn-promo').forEach(btn => {
+    btn.classList.remove('seleccionado');
+  });
+  document.getElementById('cantidadCartones').value = 1;
+  actualizarPreseleccion();
+}
+
+function getPromocionSeleccionada() {
+  return promocionSeleccionada ? promociones[promocionSeleccionada - 1] : null;
+}
+
+// ==================== FUNCIONES RESTANTES ====================
+function mostrarSeccion(id) {
+  const secciones = document.querySelectorAll('section');
+  secciones.forEach(sec => sec.classList.add('oculto'));
+  const target = document.getElementById(id);
+  if (target) target.classList.remove('oculto');
+  
+  const redes = document.getElementById('redes-sociales');
+  if (redes) {
+    redes.style.display = id === 'inicio' ? 'flex' : 'none';
+  }
+}
+
 async function cargarListaAprobadosSeccion() {
   const { data, error } = await supabase
     .from('inscripciones')
@@ -1100,50 +1273,46 @@ async function cargarListaAprobadosSeccion() {
     return;
   }
 
- const tabla = document.createElement('table');
-tabla.style.width = '100%';
-tabla.style.borderCollapse = 'collapse';
-tabla.innerHTML = `
-  <thead>
-    <tr>
-      <th>Cartón</th>
-      <th>Nombre</th>
-      <th>Cédula</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-`;
+  const tabla = document.createElement('table');
+  tabla.style.width = '100%';
+  tabla.style.borderCollapse = 'collapse';
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th>Cartón</th>
+        <th>Nombre</th>
+        <th>Cédula</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
 
-const tbody = tabla.querySelector('tbody');
+  const tbody = tabla.querySelector('tbody');
+  let filas = [];
 
-// Generar filas por cada cartón
-let filas = [];
-
-data.forEach(item => {
-  item.cartones.forEach(carton => {
-    filas.push({
-      carton,
-      nombre: item.nombre,
-      cedula: item.cedula
+  data.forEach(item => {
+    item.cartones.forEach(carton => {
+      filas.push({
+        carton,
+        nombre: item.nombre,
+        cedula: item.cedula
+      });
     });
   });
-});
 
-// Ordenar por número de cartón
-filas.sort((a, b) => a.carton - b.carton);
+  filas.sort((a, b) => a.carton - b.carton);
 
-// Insertar en tabla
-filas.forEach(item => {
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td>${item.carton}</td>
-    <td>${item.nombre}</td>
-    <td>${item.cedula}</td>
-  `;
-  tbody.appendChild(tr);
-});
+  filas.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${item.carton}</td>
+      <td>${item.nombre}</td>
+      <td>${item.cedula}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 
-contenedor.appendChild(tabla);
+  contenedor.appendChild(tabla);
 }
 
 function actualizarHoraVenezuela() {
@@ -1166,25 +1335,9 @@ function actualizarHoraVenezuela() {
   contenedor.textContent = `📅 ${formato}`;
 }
 
-actualizarHoraVenezuela(); // Primera vez
-  
-  setInterval(actualizarHoraVenezuela, 1000); // Luego cada segundo
+actualizarHoraVenezuela();
+setInterval(actualizarHoraVenezuela, 1000);
 
-async function guardarLinkWhatsapp() {
-  const link = document.getElementById('inputWhatsapp').value.trim();
-  if (!link) return alert('Ingresa un enlace válido');
-
-  const { error } = await supabase
-    .from('configuracion')
-    .upsert([{ clave: 'link_whatsapp', valore: link }], { onConflict: 'clave' });
-
-  if (error) {
-    alert('Error guardando el enlace');
-    console.error(error);
-  } else {
-    alert('Enlace guardado');
-  }
-}
 async function cargarLinkWhatsapp() {
   const { data, error } = await supabase
     .from('configuracion')
@@ -1199,15 +1352,13 @@ async function cargarLinkWhatsapp() {
 
   const btn = document.getElementById('btnWhatsapp');
   btn.href = data.valore;
-  btn.style.display = 'inline-block'; // mostrar botón si hay link
+  btn.style.display = 'inline-block';
 }
 
-// Llama esta función cuando cargue la app o la pantalla inicio
-window.addEventListener('DOMContentLoaded', cargarLinkWhatsapp);
-document.getElementById('modal-terminos').classList.remove('oculto');
 function cerrarTerminos() {
   document.getElementById('modal-terminos').classList.add('oculto');
 }
+
 async function guardarLinkYoutube() {
   const link = document.getElementById("inputYoutube").value;
   const { error } = await supabase
@@ -1220,17 +1371,7 @@ async function guardarLinkYoutube() {
   } else {
     alert("Enlace de YouTube guardado exitosamente.");
   }
-  }
-async function cargarPanelAdmin() {
-  await obtenerMontoTotalRecaudado();
-  await contarCartonesVendidos();
-  await cargarModoCartonesAdmin();
-  await cargarCartones(); // ← asegúrate de que esto se llama
-  await cargarPromocionesAdmin();
-
 }
-let modoCartones = "libre";
-let cantidadFijaCartones = 1;
 
 async function cargarConfiguracionModoCartones() {
   const { data: modoData, error: modoError } = await supabase
@@ -1240,7 +1381,7 @@ async function cargarConfiguracionModoCartones() {
     .single();
 
   if (!modoError && modoData) {
-    modoCartones = modoData.valore; // "fijo" o "libre"
+    modoCartones = modoData.valore;
   }
 
   if (modoCartones === "fijo") {
@@ -1255,6 +1396,7 @@ async function cargarConfiguracionModoCartones() {
     }
   }
 }
+
 async function cargarModoCartonesAdmin() {
   const { data: modoData } = await supabase
     .from('configuracion')
@@ -1281,12 +1423,14 @@ async function cargarModoCartonesAdmin() {
     document.getElementById('contenedorCartonesFijos').style.display = 'none';
   }
 }
-document.getElementById('modoCartonesSelect').addEventListener('change', () => {
+
+function cambiarModoCartones() {
   const modo = document.getElementById('modoCartonesSelect').value;
   const contenedor = document.getElementById('contenedorCartonesFijos');
   contenedor.style.display = (modo === 'fijo') ? 'block' : 'none';
-});
-document.getElementById('guardarModoCartonesBtn').addEventListener('click', async () => {
+}
+
+async function guardarModoCartones() {
   const modo = document.getElementById('modoCartonesSelect').value;
   const cantidad = parseInt(document.getElementById('cantidadCartonesFijos').value);
 
@@ -1311,14 +1455,15 @@ document.getElementById('guardarModoCartonesBtn').addEventListener('click', asyn
   } else {
     alert('Modo actualizado correctamente');
   }
-});
+}
+
 async function guardarGanador() {
   const nombre   = document.getElementById('ganadorNombre').value.trim();
   const cedula   = document.getElementById('ganadorCedula').value.trim();
   const cartones = document.getElementById('ganadorCartones').value.trim();
   const premio   = document.getElementById('ganadorPremio').value.trim();
   const telefono  = document.getElementById('ganadorTelefono').value.trim();
-  const fecha    = document.getElementById('ganadorFecha').value.trim(); // ahora manual
+  const fecha    = document.getElementById('ganadorFecha').value.trim();
 
   if (!nombre || !cedula || !cartones || !premio || !telefono|| !fecha) {
     return alert("Completa todos los campos del ganador.");
@@ -1335,15 +1480,6 @@ async function guardarGanador() {
     alert("¡Ganador guardado correctamente!");
     document.getElementById('formularioGanador').reset();
     cargarGanadores();
-  }
-}
-
-async function mostrarSeccion(id) {
-  document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
-  document.getElementById(id).classList.remove('oculto');
-
-  if (id === 'ganadores') {
-    await cargarGanadores();
   }
 }
 
@@ -1389,52 +1525,12 @@ async function cargarGanadores() {
   `;
   contenedor.appendChild(tabla);
 }
-document.querySelectorAll('#formularioGanador input').forEach((input, index, all) => {
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault(); // evitar que intente enviar el form
-      if (index < all.length - 1) {
-        all[index + 1].focus(); // enfoca el siguiente input
-      }
-    }
-  });
-});
-document.getElementById('clave-admin').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') {
-    e.preventDefault(); // evita el comportamiento por defecto
-    entrarAdmin(); // llama a la función de acceso
-  }
-});
+
 function toggleFormularioGanador() {
   const contenedor = document.getElementById('formularioGanadorContenedor');
   contenedor.style.display = contenedor.style.display === 'none' ? 'block' : 'none';
 }
-supabase
-  .channel('configuracion-changes')       // 1. Crea un canal de escucha llamado "configuracion-changes"
-  .on(
-    'postgres_changes',                   // 2. Escucha cambios en la base de datos de tipo "postgres_changes"
-    {
-      event: 'UPDATE',                   // 3. Solo escucha eventos de tipo "UPDATE"
-      schema: 'public',                  // 4. En el esquema público
-      table: 'configuracion',            // 5. En la tabla "configuracion"
-      filter: 'clave=in.(modo_cartones,cartones_obligatorios)' // 6. Pero solo si se actualiza el campo "modo_cartones" o "cartones_obligatorios"
-    },
-    async (payload) => {                 // 7. Esto es lo que ocurre cuando se detecta el cambio:
-      const clave = payload.new.clave;
-      const valor = payload.new.valore;
 
-      if (clave === 'modo_cartones') {
-        modoCartones = valor; // actualiza la variable global
-        document.getElementById('modoCartonesSelect').value = valor; // actualiza el select en el admin
-      }
-
-      if (clave === 'cartones_obligatorios') {
-        cantidadFijaCartones = parseInt(valor); // actualiza la variable global
-        document.getElementById('cantidadCartonesFijos').value = valor; // actualiza el input en el admin
-      }
-    }
-  )
-  .subscribe(); // 8. Activa la suscripción
 async function activarCohetes() {
   const { error } = await supabase
     .from('configuracion')
@@ -1447,49 +1543,21 @@ async function activarCohetes() {
     alert("¡Cohetes activados!");
   }
 }
-async function eliminarInscripcion(item, fila) {
-  const confirmar = confirm('¿Eliminar esta inscripción? Se liberarán solo los cartones que nadie más tenga.');
-  if (!confirmar) return;
-
-  try {
-    // 1) Eliminar de forma "segura" en el servidor
-    const { data, error } = await supabase.rpc('rpc_eliminar_inscripcion_seguro', { _id: item.id });
-    if (error) throw error;
-
-    // 2) Eliminar comprobante del storage (si lo usas)
-    if (item.comprobante) {
-      const nombreArchivo = item.comprobante.split('/').pop();
-      await supabase.storage.from('comprobantes').remove([nombreArchivo]);
-    }
-
-    // 3) Actualizar UI
-    fila.remove();
-    await contarCartonesVendidos();     // refresca contadores
-    await obtenerMontoTotalRecaudado(); // si lo calculas
-    await cargarCartones();             // refresca rojos
-
-    alert(`Inscripción eliminada. Cartones liberados: ${data ?? 0}`);
-  } catch (e) {
-    console.error(e);
-    alert('Error al eliminar inscripción.');
-  }
-}
 
 function ordenarInscripcionesPorNombre() {
   const tabla = document.querySelector('#tabla-comprobantes tbody');
   const filas = Array.from(tabla.rows);
 
-  // Ordena por nombre (columna 0)
   filas.sort((a, b) => {
     const nombreA = a.cells[0].textContent.trim().toLowerCase();
     const nombreB = b.cells[0].textContent.trim().toLowerCase();
     return nombreA.localeCompare(nombreB);
   });
 
-  // Limpia la tabla y vuelve a insertar las filas ordenadas
   tabla.innerHTML = '';
   filas.forEach(fila => tabla.appendChild(fila));
 }
+
 let ordenCedulaAscendente = true;
 
 function ordenarPorCedula() {
@@ -1499,74 +1567,59 @@ function ordenarPorCedula() {
   filas.sort((a, b) => {
     const cedulaA = parseInt(a.cells[2].textContent.trim());
     const cedulaB = parseInt(b.cells[2].textContent.trim());
-
     return ordenCedulaAscendente ? cedulaA - cedulaB : cedulaB - cedulaA;
   });
 
   tabla.innerHTML = '';
   filas.forEach(fila => tabla.appendChild(fila));
-
   ordenCedulaAscendente = !ordenCedulaAscendente;
 }
+
 let ordenReferenciaAscendente = false;
 function ordenarPorReferencia() {
   const tabla = document.querySelector('#tabla-comprobantes tbody');
   const filas = Array.from(tabla.rows);
 
   filas.sort((a, b) => {
-    // Tomamos el valor de la columna de referencia (ajusta el índice según el orden real de tus columnas)
-    const refA = a.cells[5].textContent.trim(); // Cambia el número si tu columna no es la 6ta
+    const refA = a.cells[5].textContent.trim();
     const refB = b.cells[5].textContent.trim();
-    // Convierte a número para comparar
     const numA = parseInt(refA) || 0;
     const numB = parseInt(refB) || 0;
-
     return ordenReferenciaAscendente ? numA - numB : numB - numA;
   });
 
   tabla.innerHTML = '';
   filas.forEach(fila => tabla.appendChild(fila));
-
-  ordenReferenciaAscendente = !ordenReferenciaAscendente; // Alterna orden para cada clic
+  ordenReferenciaAscendente = !ordenReferenciaAscendente;
 }
-// Link universal a WhatsApp con heurística para Venezuela
+
 function buildWhatsAppLink(rawPhone, presetMsg = '') {
   if (!rawPhone) return null;
 
-  // 1) Normaliza: quita espacios, guiones, puntos, paréntesis
   let s = String(rawPhone).trim().replace(/[\s\-\.\(\)]/g, '');
 
-  // 2) Convierte "00" internacional a "+"
   if (s.startsWith('00')) s = '+' + s.slice(2);
 
-  // 3) Si NO trae + (formato local), intenta detectar Venezuela móvil
   if (!s.startsWith('+')) {
-    // Solo dígitos para validar prefijos
     const digits = s.replace(/\D+/g, '');
-    // Prefijos VE móviles: 412, 414, 416, 424, 426 (con o sin 0 inicial)
     const m = /^(0?)(412|414|416|424|426)(\d{7})$/.exec(digits);
     if (m) {
-      // Fuerza internacional: +58 + prefijo + 7 dígitos
       s = '+58' + m[2] + m[3];
     } else {
-      // (Opcional) Si quieres un país por defecto cuando no sea VE:
-      // s = '+58' + digits; // cambia 58 por tu país base o comenta para dejarlo tal cual
-      s = '+' + digits; // intenta internacional genérico
+      s = '+' + digits;
     }
   }
 
-  // 4) wa.me no acepta el "+" en el path
   const waNumber = s.replace(/^\+/, '');
-
   const text = encodeURIComponent(presetMsg || 'Hola, te escribo de parte del equipo de bingoandino75.');
   return `https://wa.me/${waNumber}?text=${text}`;
 }
+
 async function fetchTodosLosOcupados() {
   const pageSize = 1000;
   let from = 0;
   let todos = [];
 
-  // Primero pide el count total (sin traer filas)
   const { count, error: countErr } = await supabase
     .from('cartones')
     .select('numero', { count: 'exact', head: true });
@@ -1594,400 +1647,11 @@ async function fetchTodosLosOcupados() {
     from += pageSize;
   }
 
-  // Fuerza a número para que funcione includes()
   return todos.map(r => Number(r.numero));
 }
-// Utilidad segura para crear celda
-function td(text) {
-  const el = document.createElement('td');
-  el.textContent = text;
-  return el;
-}
 
-// Dibuja tabla de duplicados
-function renderDuplicados(lista) {
-  const cont = document.getElementById('duplicadosResultado');
-  cont.innerHTML = '';
-
-  if (!lista.length) {
-    cont.innerHTML = '<p style="color:#4caf50;font-weight:bold;">No se encontraron cartones duplicados en inscripciones activas.</p>';
-    return;
-  }
-
-  const tabla = document.createElement('table');
-  tabla.style.width = '100%';
-  tabla.style.borderCollapse = 'collapse';
-  tabla.innerHTML = `
-    <thead>
-      <tr>
-        <th style="border:1px solid #ccc;padding:6px;">Cartón</th>
-        <th style="border:1px solid #ccc;padding:6px;">Personas</th>
-        <th style="border:1px solid #ccc;padding:6px;">Veces</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = tabla.querySelector('tbody');
-
-  lista.forEach(row => {
-    const tr = document.createElement('tr');
-    tr.appendChild(td(String(row.numero)));
-    tr.appendChild(td(row.personas.map(p => `${p.nombre} (${p.cedula})`).join(', ')));
-    tr.appendChild(td(String(row.veces)));
-    tbody.appendChild(tr);
-  });
-
-  cont.appendChild(tabla);
-}
-
-// Resalta en rojo las celdas “# Cartones” que contengan algún duplicado
-function resaltarCeldasDuplicadas(duplicadosSet) {
-  // En tu tabla admin: columnas -> Nombre, Teléfono, Cédula, Referido, # Cartones, Referencia, ...
-  // "# Cartones" es la columna 5 (index 4)
-  const cartonesCells = document.querySelectorAll('#tabla-comprobantes tbody tr td:nth-child(5)');
-  cartonesCells.forEach(td => {
-    const nums = td.textContent
-      .split(',')
-      .map(s => parseInt(s.trim(), 10))
-      .filter(n => Number.isFinite(n));
-
-    const tieneDuplicado = nums.some(n => duplicadosSet.has(n));
-    td.style.backgroundColor = tieneDuplicado ? 'rgba(255,0,0,0.18)' : ''; // resalta si aplica
-  });
-}
-
-// Lógica principal
-async function detectarCartonesDuplicados() {
-  const boton = document.getElementById('btnDuplicados');
-  const prev = boton.textContent;
-  boton.disabled = true;
-  boton.textContent = 'Buscando duplicados...';
-
-  try {
-    // 1) Trae inscripciones activas (solo columnas necesarias)
-    const { data, error } = await supabase
-      .from('inscripciones')
-      .select('id,nombre,cedula,estado,cartones')
-      .in('estado', ['pendiente', 'aprobado']);
-
-    if (error) throw error;
-
-    // 2) Construye un índice numero -> [{id, nombre, cedula}, ...]
-    const indice = new Map();
-
-    (data || []).forEach(ins => {
-      if (!Array.isArray(ins.cartones)) return;
-
-      // Evita contar duplicado dentro de la MISMA inscripción
-      const únicos = new Set(
-        ins.cartones
-          .map(x => {
-            // cartones es jsonb[]; cada elemento puede venir como número o json/texto
-            if (typeof x === 'number') return x;
-            if (typeof x === 'string') return parseInt(x, 10);
-            // jsonb -> sacar como string plano
-            try {
-              const s = (x && typeof x === 'object') ? JSON.stringify(x) : String(x);
-              return parseInt(s.replace(/[^0-9\-]/g,''), 10);
-            } catch { return NaN; }
-          })
-          .filter(n => Number.isFinite(n))
-      );
-
-      únicos.forEach(n => {
-        if (!indice.has(n)) indice.set(n, []);
-        indice.get(n).push({ id: ins.id, nombre: ins.nombre || '', cedula: ins.cedula || '' });
-      });
-    });
-
-    // 3) Filtra sólo números con más de un dueño
-    const duplicados = [];
-    const duplicadosSet = new Set();
-    for (const [numero, dueños] of indice.entries()) {
-      if (dueños.length > 1) {
-        duplicados.push({
-          numero,
-          personas: dueños,
-          veces: dueños.length
-        });
-        duplicadosSet.add(numero);
-      }
-    }
-
-    // 4) Ordena por veces desc, luego número asc
-    duplicados.sort((a, b) => (b.veces - a.veces) || (a.numero - b.numero));
-
-    // 5) Pinta resultados y resalta celdas
-    renderDuplicados(duplicados);
-    resaltarCeldasDuplicadas(duplicadosSet);
-
-  } catch (e) {
-    console.error(e);
-    const cont = document.getElementById('duplicadosResultado');
-    cont.innerHTML = '<p style="color:#f44336;">Error buscando duplicados. Revisa la consola.</p>';
-  } finally {
-    boton.disabled = false;
-    boton.textContent = prev;
-  }
-}
-
-// Hook al botón
-document.getElementById('btnDuplicados')?.addEventListener('click', detectarCartonesDuplicados);
-
-// ---- Config local: margen para considerar "huérfano"
-const HUERFANOS_MIN_AGE = '0 minutes'; // pon '0 minutes' si quieres ver todo al instante
-
-function renderTablaHuerfanos(rows) {
-  const cont = document.getElementById('huerfanosResultado');
-  cont.innerHTML = '';
-
-  if (!rows || rows.length === 0) {
-    cont.innerHTML = '<p style="color:#4caf50;font-weight:bold;">No hay cartones huérfanos.</p>';
-    return;
-  }
-
-  const tabla = document.createElement('table');
-  tabla.style.width = '100%';
-  tabla.style.borderCollapse = 'collapse';
-  tabla.innerHTML = `
-    <thead>
-      <tr>
-        <th style="border:1px solid #ccc;padding:6px;">Cartón</th>
-        <th style="border:1px solid #ccc;padding:6px;">Reservado desde</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = tabla.querySelector('tbody');
-
-  rows.forEach(r => {
-    const tr = document.createElement('tr');
-    const tdN = document.createElement('td');
-    const tdF = document.createElement('td');
-    tdN.textContent = r.numero;
-    tdN.style.border = '1px solid #ccc';
-    tdN.style.padding = '6px';
-    tdF.textContent = r.created_at ? new Date(r.created_at).toLocaleString() : '';
-    tdF.style.border = '1px solid #ccc';
-    tdF.style.padding = '6px';
-    tr.appendChild(tdN);
-    tr.appendChild(tdF);
-    tbody.appendChild(tr);
-  });
-
-  cont.appendChild(tabla);
-}
-
-async function verHuerfanos() {
-  const btn = document.getElementById('btnVerHuerfanos');
-  const prev = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Buscando...';
-  try {
-    const { data, error } = await supabase.rpc('rpc_listar_cartones_huerfanos', {
-      _min_age: HUERFANOS_MIN_AGE
-    });
-    if (error) throw error;
-    renderTablaHuerfanos(data);
-  } catch (e) {
-    console.error(e);
-    document.getElementById('huerfanosResultado').innerHTML =
-      '<p style="color:#f44336;">Error buscando huérfanos. Revisa consola.</p>';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = prev;
-  }
-}
-
-async function liberarHuerfanos() {
-  if (!confirm('¿Liberar todos los cartones huérfanos?')) return;
-  const btn = document.getElementById('btnLiberarHuerfanos');
-  const prev = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Limpiando...';
-  try {
-    const { data, error } = await supabase.rpc('rpc_liberar_cartones_huerfanos', {
-      _min_age: HUERFANOS_MIN_AGE
-    });
-    if (error) throw error;
-
-    alert(`Listo. Cartones liberados: ${data ?? 0}`);
-    // refresca UI
-    await verHuerfanos();
-    await cargarCartones?.();            // tu función ya existente
-    await contarCartonesVendidos?.();    // tu contador
-  } catch (e) {
-    console.error(e);
-    alert('Error al liberar huérfanos.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = prev;
-  }
-}
-
-document.getElementById('btnVerHuerfanos')?.addEventListener('click', verHuerfanos);
-document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
-
-
-async function cargarPromocionesConfig() {
-  try {
-    for (let i = 0; i < promociones.length; i++) {
-      const promo = promociones[i];
-      const prefix = `promo${i + 1}`;
-      
-      promo.activa = (await getConfigValue(`${prefix}_activa`, 'false')) === 'true';
-      promo.descripcion = await getConfigValue(`${prefix}_descripcion`, `Promo ${i + 1}`);
-      promo.cantidad = parseInt(await getConfigValue(`${prefix}_cantidad`, '0')) || 0;
-      promo.precio = parseFloat(await getConfigValue(`${prefix}_precio`, '0')) || 0;
-    }
-    
-    console.log('Promociones cargadas:', promociones);
-    renderizarBotonesPromociones();
-  } catch (error) {
-    console.error('Error cargando promociones:', error);
-  }
-}
-
-
-function renderizarBotonesPromociones() {
-  const promoBox = document.getElementById('promoBox');
-  if (!promoBox) return;
-
-  let algunaActiva = false;
-  
-  promociones.forEach((promo, index) => {
-    const boton = document.querySelector(`[data-promo="${index + 1}"]`);
-    const descElement = document.getElementById(`promo-desc-${index + 1}`);
-    const precioElement = document.getElementById(`promo-precio-${index + 1}`);
-    
-    if (boton && descElement && precioElement) {
-      if (promo.activa && promo.cantidad > 0 && promo.precio > 0) {
-        descElement.textContent = promo.descripcion;
-        precioElement.textContent = `${promo.precio.toFixed(2)} Bs`;
-        boton.classList.remove('desactivado');
-        algunaActiva = true;
-        
-        // Actualizar tooltip
-        boton.title = `${promo.cantidad} cartones por ${promo.precio.toFixed(2)} Bs`;
-      } else {
-        descElement.textContent = `Promo ${index + 1} (No disponible)`;
-        precioElement.textContent = 'No disponible';
-        boton.classList.add('desactivado');
-      }
-      
-      // Remover selección anterior
-      boton.classList.remove('seleccionado');
-    }
-  });
-  
-  // Mostrar/ocultar contenedor según si hay promociones activas
-  promoBox.classList.toggle('oculto', !algunaActiva);
-}
-
-function usarPromocion() {
-  const maxDisponibles = totalCartones - cartonesOcupados.length;
-  if (promoCantidad > maxDisponibles) {
-    alert(`No hay suficientes cartones disponibles para la promoción (disponibles: ${maxDisponibles}).`);
-    return;
-  }
-  promoSeleccionada = true;          // ← CLAVE: sólo aquí va a true
-  cantidadPermitida = promoCantidad;
-  usuario.cartones = [];
-  mostrarVentana('cartones');
-  actualizarMonto();
-}
-
-
-// Cargar configuración de 4 promociones en admin
-async function cargarPromocionesAdmin() {
-  try {
-    for (let i = 1; i <= 4; i++) {
-      document.getElementById(`promo${i}_activa`).checked = 
-        (await getConfigValue(`promo${i}_activa`, 'false')) === 'true';
-      document.getElementById(`promo${i}_descripcion`).value = 
-        await getConfigValue(`promo${i}_descripcion`, '');
-      document.getElementById(`promo${i}_cantidad`).value = 
-        parseInt(await getConfigValue(`promo${i}_cantidad`, '0')) || '';
-      document.getElementById(`promo${i}_precio`).value = 
-        parseFloat(await getConfigValue(`promo${i}_precio`, '0')) || '';
-    }
-  } catch (error) {
-    console.error('Error cargando promociones en admin:', error);
-  }
-}
-
-// Guardar las 4 promociones
-async function guardarPromociones() {
-  const estado = document.getElementById('estadoPromociones');
-  
-  try {
-    const updates = [];
-    
-    for (let i = 1; i <= 4; i++) {
-      const activa = document.getElementById(`promo${i}_activa`).checked;
-      const desc = document.getElementById(`promo${i}_descripcion`).value.trim();
-      const cant = parseInt(document.getElementById(`promo${i}_cantidad`).value) || 0;
-      const precio = parseFloat(document.getElementById(`promo${i}_precio`).value) || 0;
-      
-      updates.push(
-        { clave: `promo${i}_activa`, valore: String(activa) },
-        { clave: `promo${i}_descripcion`, valore: desc },
-        { clave: `promo${i}_cantidad`, valore: String(cant) },
-        { clave: `promo${i}_precio`, valore: String(precio) }
-      );
-    }
-    
-    const { error } = await supabase.from('configuracion').upsert(updates, { onConflict: 'clave' });
-    
-    if (error) {
-      estado.textContent = 'Error guardando promociones';
-      estado.style.color = 'red';
-    } else {
-      estado.textContent = '✅ Todas las promociones guardadas correctamente';
-      estado.style.color = 'green';
-      
-      // Recargar configuración
-      await cargarPromocionesConfig();
-      
-      setTimeout(() => {
-        estado.textContent = '';
-      }, 3000);
-    }
-  } catch (error) {
-    console.error('Error:', error);
-    estado.textContent = 'Error inesperado al guardar';
-    estado.style.color = 'red';
-  }
-}
-
-// Agregar event listener en cargarPanelAdmin
-document.getElementById('guardarPromocionesBtn')?.addEventListener('click', guardarPromociones);
-
-function resetPromo() {
-  promoSeleccionada = false;
-}
-// Cambia esta función para usar el nuevo sistema
-function limpiarPromoPorCambioCantidad() {
-  if (promocionSeleccionada) {
-    deseleccionarPromocion(); // ← Usar la nueva función
-  }
-  actualizarPreseleccion();
-}
-
-document.getElementById('btnMas').onclick = () => {
-  document.getElementById('cantidadCartones').stepUp();
-  limpiarPromoPorCambioCantidad();   // ← apaga promo
-};
-
-document.getElementById('btnMenos').onclick = () => {
-  document.getElementById('cantidadCartones').stepDown();
-  limpiarPromoPorCambioCantidad();   // ← apaga promo
-};
-
-document.getElementById('cantidadCartones')
-  .addEventListener('input', limpiarPromoPorCambioCantidad);
 function restringirSolo4Digitos(input) {
-  input.value = input.value.replace(/\D+/g, '').slice(0, 4); // solo números, máx 4
+  input.value = input.value.replace(/\D+/g, '').slice(0, 4);
 }
 
 function editarReferencia(td) {
@@ -2004,12 +1668,10 @@ function editarReferencia(td) {
   const btnOk   = td.querySelector('.btn-guardar');
   const btnCancel = td.querySelector('.btn-cancelar');
 
-  // Restringe a 4 dígitos mientras escribe
   inp.addEventListener('input', () => restringirSolo4Digitos(inp));
   inp.focus();
   inp.select();
 
-  // Enter guarda, Escape cancela
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') btnOk.click();
     if (e.key === 'Escape') btnCancel.click();
@@ -2023,27 +1685,17 @@ function editarReferencia(td) {
       return;
     }
 
-    // (Opcional) Verifica duplicados activos:
-    // const { data: dup } = await supabase
-    //   .from('inscripciones')
-    //   .select('id', { count: 'exact', head: true })
-    //   .eq('referencia4dig', val)
-    //   .in('estado', ['pendiente','aprobado']);
-
-    // Guardar en BD
     const { error } = await supabase
       .from('inscripciones')
       .update({ referencia4dig: val })
       .eq('id', id);
 
     if (error) {
-      // Si ves 42501 es por RLS; ajusta políticas para UPDATE en 'referencia4dig'
       console.error(error);
       alert('No se pudo guardar la referencia.');
       return;
     }
 
-    // Volver a modo lectura
     td.innerHTML = `
       <span class="ref-text">${val}</span>
       <button class="btn-accion btn-edit-ref" title="Editar">&#9998;</button>
@@ -2059,20 +1711,21 @@ function editarReferencia(td) {
     td.querySelector('.btn-edit-ref').onclick = () => editarReferencia(td);
   };
 }
-// === Helpers de normalización/parseo ===
+
+// ==================== FUNCIONES RESTANTES (continuación) ====================
 function normalizarNombre(s='') {
   return String(s)
     .trim()
     .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quita acentos
-    .replace(/\s+/g, ' ');                             // colapsa espacios
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
 }
+
 function solo4Digitos(s='') {
   const t = String(s).replace(/\D+/g, '').slice(0,4);
   return /^\d{4}$/.test(t) ? t : '';
 }
 
-// === Fetch de aprobados (solo las columnas que usaremos) ===
 async function fetchAprobadosBasico() {
   const { data, error } = await supabase
     .from('inscripciones')
@@ -2086,8 +1739,7 @@ async function fetchAprobadosBasico() {
   return data || [];
 }
 
-// === Render de tabla de duplicados genérica ===
-function renderDuplicadosAprobados(lista, tipoClave /* 'nombre' | 'referencia' */) {
+function renderDuplicadosAprobados(lista, tipoClave) {
   const cont = document.getElementById('duplicadosAprobadosResultado');
   if (!cont) return;
   cont.innerHTML = '';
@@ -2128,36 +1780,16 @@ function renderDuplicadosAprobados(lista, tipoClave /* 'nombre' | 'referencia' *
   cont.appendChild(tbl);
 }
 
-// === Resalta filas duplicadas en la tabla ya pintada por "Ver lista" (solo por nombre) ===
-function resaltarDuplicadosNombreEnListaAprobados(dupNameSet) {
-  const listaDiv = document.getElementById('listaAprobados');
-  if (!listaDiv) return;
-  const table = listaDiv.querySelector('table');
-  if (!table) return;
-
-  // limpiar resaltados previos
-  table.querySelectorAll('tbody tr').forEach(tr => tr.classList.remove('resaltado-dup'));
-
-  // Asumimos que la primera columna de esa tabla es "Nombre"
-  table.querySelectorAll('tbody tr').forEach(tr => {
-    const nombreTxt = tr.cells?.[0]?.textContent || '';
-    if (dupNameSet.has(normalizarNombre(nombreTxt))) {
-      tr.classList.add('resaltado-dup');
-    }
-  });
-}
-
-// === Detector de duplicados por NOMBRE (aprobados) ===
 async function detectarDuplicadosAprobadosPorNombre() {
   const rows = await fetchAprobadosBasico();
-  const mapa = new Map(); // nombreNorm -> [rows]
+  const mapa = new Map();
   rows.forEach(r => {
     const k = normalizarNombre(r.nombre);
     if (!k) return;
     if (!mapa.has(k)) mapa.set(k, []);
     mapa.get(k).push(r);
   });
-  // Solo grupos con más de 1
+  
   const duplicados = [];
   const dupSet = new Set();
   for (const [k, arr] of mapa.entries()) {
@@ -2166,110 +1798,205 @@ async function detectarDuplicadosAprobadosPorNombre() {
       dupSet.add(k);
     }
   }
-  // Orden: más repetidos primero
+  
   duplicados.sort((a,b) => (b.items.length - a.items.length) || a.clave.localeCompare(b.clave));
   renderDuplicadosAprobados(duplicados, 'nombre');
-  resaltarDuplicadosNombreEnListaAprobados(dupSet);
 }
 
-// === Detector de duplicados por REFERENCIA (aprobados) ===
 async function detectarDuplicadosAprobadosPorReferencia() {
   const rows = await fetchAprobadosBasico();
-  const mapa = new Map(); // ref4 -> [rows]
+  const mapa = new Map();
   rows.forEach(r => {
     const ref = solo4Digitos(r.referencia4dig);
     if (!ref) return;
     if (!mapa.has(ref)) mapa.set(ref, []);
     mapa.get(ref).push(r);
   });
+  
   const duplicados = [];
   for (const [ref, arr] of mapa.entries()) {
     if (arr.length > 1) duplicados.push({ clave: ref, items: arr });
   }
+  
   duplicados.sort((a,b) => (b.items.length - a.items.length) || (a.clave.localeCompare(b.clave)));
   renderDuplicadosAprobados(duplicados, 'referencia');
-
-  // (Opcional) También podríamos resaltar en la tabla de "listaAprobados",
-  // pero esa tabla no muestra la referencia. Si quieres, puedo agregarte la columna.
-}
-function seleccionarPromocion(numero) {
-  const promo = promociones[numero - 1];
-  
-  // Validar que la promoción esté activa y disponible
-  if (!promo.activa || promo.cantidad <= 0 || promo.precio <= 0) {
-    alert('Esta promoción no está disponible en este momento.');
-    return;
-  }
-  
-  // Validar stock de cartones
-  const maxDisponibles = totalCartones - cartonesOcupados.length;
-  if (promo.cantidad > maxDisponibles) {
-    alert(`No hay suficientes cartones disponibles para esta promoción. Disponibles: ${maxDisponibles}`);
-    return;
-  }
-  
-  // Deseleccionar promoción anterior
-  if (promocionSeleccionada === numero) {
-    deseleccionarPromocion();
-    return;
-  }
-  
-  // Seleccionar nueva promoción
-  promocionSeleccionada = numero;
-  
-  // Actualizar UI
-  document.querySelectorAll('.btn-promo').forEach(btn => {
-    btn.classList.remove('seleccionado');
-  });
-  
-  const botonSeleccionado = document.querySelector(`[data-promo="${numero}"]`);
-  if (botonSeleccionado) {
-    botonSeleccionado.classList.add('seleccionado');
-  }
-  
-  // Actualizar cantidad y monto
-  document.getElementById('cantidadCartones').value = promo.cantidad;
-  actualizarPreseleccion();
-  
-  // Feedback visual
-  console.log(`Promoción ${numero} seleccionada: ${promo.cantidad} cartones por ${promo.precio} Bs`);
 }
 
-// Deseleccionar promoción
-function deseleccionarPromocion() {
-  promocionSeleccionada = null;
-  document.querySelectorAll('.btn-promo').forEach(btn => {
-    btn.classList.remove('seleccionado');
+async function verListaAprobados() {
+  const { data, error } = await supabase
+    .from('inscripciones')
+    .select('*')
+    .eq('estado', 'aprobado');
+
+  const listaDiv = document.getElementById('listaAprobados');
+  listaDiv.innerHTML = '';
+
+  if (error) {
+    console.error('Error al obtener aprobados:', error);
+    listaDiv.innerHTML = '<p>Error al obtener la lista.</p>';
+    return;
+  }
+
+  if (data.length === 0) {
+    listaDiv.innerHTML = '<p>No hay personas aprobadas.</p>';
+    return;
+  }
+
+  const tabla = document.createElement('table');
+  tabla.style.width = '100%';
+  tabla.style.borderCollapse = 'collapse';
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th style="border: 1px solid #ccc; padding: 8px;">Nombre</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Cédula</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Referido</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Teléfono</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Cartones</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
+  const tbody = tabla.querySelector('tbody');
+
+  data.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="border: 1px solid #ccc; padding: 8px;">${item.nombre}</td>
+      <td style="border: 1px solid #ccc; padding: 8px;">${item.cedula}</td>
+      <td style="border: 1px solid #ccc; padding: 8px;">${item.referido}</td>
+      <td style="border: 1px solid #ccc; padding: 8px;">
+        <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, tu inscripción fue aprobada.`)}"
+           target="_blank" rel="noopener">
+          ${item.telefono}
+        </a>
+      </td>
+      <td style="border: 1px solid #ccc; padding: 8px;">${item.cartones.join(', ')}</td>
+    `;
+    tbody.appendChild(tr);
   });
-  
-  // Resetear a cantidad mínima
-  document.getElementById('cantidadCartones').value = 1;
-  actualizarPreseleccion();
+
+  listaDiv.appendChild(tabla);
 }
-// Obtener promoción seleccionada
-function getPromocionSeleccionada() {
-  return promocionSeleccionada ? promociones[promocionSeleccionada - 1] : null;
+
+function imprimirLista() {
+  const lista = document.getElementById('listaAprobados');
+  if (!lista.innerHTML.trim()) {
+    alert('Primero debes generar la lista de aprobados.');
+    return;
+  }
+  window.print();
 }
-// Agrega esta función que falta
-function generarCartones() {
-  console.log(`Sistema listo para ${totalCartones} cartones`);
-  // Esta función es llamada en DOMContentLoaded pero no existe
-}
-// Agrega esta función que se referencia pero no existe
-async function cargarPromocionesAdmin() {
-  try {
-    for (let i = 1; i <= 4; i++) {
-      const activa = await getConfigValue(`promo${i}_activa`, 'false');
-      const desc = await getConfigValue(`promo${i}_descripcion`, '');
-      const cant = await getConfigValue(`promo${i}_cantidad`, '0');
-      const precio = await getConfigValue(`promo${i}_precio`, '0');
-      
-      document.getElementById(`promo${i}_activa`).checked = activa === 'true';
-      document.getElementById(`promo${i}_descripcion`).value = desc;
-      document.getElementById(`promo${i}_cantidad`).value = parseInt(cant) || '';
-      document.getElementById(`promo${i}_precio`).value = parseFloat(precio) || '';
+
+// ==================== FUNCIONES FALTANTES ====================
+async function subirCartones() {
+  const input = document.getElementById('cartonImageInput');
+  const files = input.files;
+  const status = document.getElementById('uploadStatus');
+  status.innerHTML = '';
+
+  if (!files.length) {
+    alert('Selecciona al menos una imagen');
+    return;
+  }
+
+  status.innerHTML = '<p style="color:blue;">Cargando imágenes...</p>';
+
+  const errores = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const fileName = file.name;
+
+    try {
+      const { error } = await supabase.storage
+        .from('cartones')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (error) {
+        errores.push(`Error subiendo ${fileName}: ${error.message}`);
+      }
+    } catch (err) {
+      errores.push(`Error inesperado en ${fileName}`);
     }
-  } catch (error) {
-    console.error('Error cargando promociones en admin:', error);
+  }
+
+  input.value = '';
+
+  if (errores.length) {
+    status.innerHTML = `<p style="color:red;">Se encontraron errores:</p><ul>${errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
+  } else {
+    status.innerHTML = '<p style="color:green;">¡Todas las imágenes fueron subidas exitosamente!</p>';
+  }
+
+  setTimeout(() => { status.innerHTML = ''; }, 5000);
+}
+
+async function borrarCartones() {
+  const claveCorrecta = "1234admin";
+  const claveIngresada = prompt("Ingrese la clave de seguridad para borrar todos los cartones:");
+
+  if (claveIngresada !== claveCorrecta) {
+    alert("Clave incorrecta. No se borraron los cartones.");
+    return;
+  }
+
+  const status = document.getElementById('deleteStatus');
+  status.innerHTML = 'Cargando lista de imágenes...';
+
+  const { data: list, error: listError } = await supabase.storage
+    .from('cartones')
+    .list('', { limit: 1000 });
+
+  if (listError) {
+    status.innerHTML = `<p style="color:red;">Error listando imágenes: ${listError.message}</p>`;
+    return;
+  }
+
+  if (!list.length) {
+    status.innerHTML = '<p style="color:orange;">No hay imágenes para borrar.</p>';
+    return;
+  }
+
+  const fileNames = list.map(file => file.name);
+  const { error: deleteError } = await supabase.storage
+    .from('cartones')
+    .remove(fileNames);
+
+  if (deleteError) {
+    status.innerHTML = `<p style="color:red;">Error al borrar imágenes: ${deleteError.message}</p>`;
+  } else {
+    status.innerHTML = `<p style="color:green;">Se borraron ${fileNames.length} imágenes exitosamente.</p>`;
+  }
+
+  setTimeout(() => { status.innerHTML = ''; }, 5000);
+}
+
+async function guardarPrecioPorCarton() {
+  const nuevoPrecio = parseFloat(document.getElementById('precioCarton').value);
+  if (isNaN(nuevoPrecio) || nuevoPrecio < 0) {
+    alert('Ingrese un precio válido');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('configuracion')
+    .upsert({ clave: 'precio_por_carton', valore: nuevoPrecio }, { onConflict: 'clave' });
+
+  if (error) {
+    alert('Error guardando el precio');
+    console.error(error);
+  } else {
+    alert('Precio actualizado correctamente');
+    precioPorCarton = nuevoPrecio;
+    actualizarMonto();
   }
 }
+
+// ==================== INICIALIZACIÓN ====================
+// Inicializar detector de actividad
+iniciarDetectorActividad();
