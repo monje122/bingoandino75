@@ -2437,139 +2437,31 @@ function cancelarOTP() {
 
 // Función para cerrar sesión (MEJORADA)
 async function cerrarSesionAdmin() {
-  if (!confirm('¿Estás seguro de cerrar sesión?')) return;
-  
-  console.log('🔴 INICIANDO CIERRE DE SESIÓN COMPLETO');
-  
   try {
-    // PASO 1: Verificar si hay sesión activa en Supabase
-    const { data: { session } } = await supabase.auth.getSession();
-    console.log('📊 Sesión actual detectada:', session ? 'SÍ' : 'NO');
+    // Limpiar sesión activa
+    await actualizarSesionActiva(null, false);
     
-    // PASO 2: LIMPIAR SIEMPRE la tabla sesiones_activas (lo más importante)
-    console.log('🧹 Limpiando tabla sesiones_activas...');
-    const { error: tableError } = await supabase
-      .from('sesiones_activas')
-      .update({
-        activa: false,
-        user_id: null,
-        user_email: null,
-        session_token: null,
-        ip_address: null,
-        login_timestamp: null,
-        ultima_actividad: new Date().toISOString()
-      })
-      .eq('tipo', 'admin');
+    // Cerrar sesión en Supabase
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error('Error cerrando sesión:', error);
     
-    if (tableError) {
-      console.error('❌ Error actualizando tabla:', tableError);
-      // Intentar INSERT si UPDATE falla
-      await supabase
-        .from('sesiones_activas')
-        .upsert({
-          tipo: 'admin',
-          activa: false,
-          user_id: null,
-          user_email: null
-        }, { onConflict: 'tipo' });
-    }
-    console.log('✅ Tabla sesiones_activas limpiada');
-    
-    // PASO 3: Intentar cerrar sesión en Supabase SOLO si hay sesión
-    if (session) {
-      console.log('🚪 Intentando cerrar sesión Supabase...');
-      try {
-        const { error: signOutError } = await supabase.auth.signOut();
-        if (signOutError) {
-          console.warn('⚠️ Error en signOut (puede ser normal):', signOutError.message);
-        } else {
-          console.log('✅ SignOut exitoso');
-        }
-      } catch (signOutError) {
-        console.warn('⚠️ Excepción en signOut:', signOutError.message);
-        // Continuar de todas formas
-      }
-    } else {
-      console.log('ℹ️ No hay sesión Supabase activa, saltando signOut');
-    }
-    
-    // PASO 4: Limpiar almacenamiento local MANUALMENTE (IMPORTANTE)
-    console.log('🗑️ Limpiando localStorage y sessionStorage...');
-    
-    // Eliminar TODOS los tokens relacionados con Supabase
-    const supabaseKeys = [
-      `sb-${supabaseUrl.replace('https://', '')}-auth-token`,
-      'supabase.auth.token',
-      'supabase.auth.refresh_token',
-      'supabase.auth.expires_at'
-    ];
-    
-    supabaseKeys.forEach(key => {
-      localStorage.removeItem(key);
-      sessionStorage.removeItem(key);
-    });
-    
-    // También eliminar cualquier otra clave que contenga "supabase" o "sb-"
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && (key.includes('supabase') || key.includes('sb-') || key.includes('auth'))) {
-        localStorage.removeItem(key);
-        console.log(`   Removido de localStorage: ${key}`);
-      }
-    }
-    
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i);
-      if (key && (key.includes('supabase') || key.includes('sb-') || key.includes('auth'))) {
-        sessionStorage.removeItem(key);
-        console.log(`   Removido de sessionStorage: ${key}`);
-      }
-    }
-    
-    // PASO 5: Limpiar variables globales
+    // Limpiar variables
     adminSession = null;
     sesionActiva = false;
     clearTimeout(inactivityTimer);
     
-    console.log('✅ Variables globales limpiadas');
+    // Limpiar formulario
+    document.getElementById('admin-email').value = '';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('admin-error').textContent = '';
     
-    // PASO 6: Confirmación al usuario
-    alert('✅ Sesión cerrada correctamente. El panel admin está disponible para otros usuarios.');
-    
-    // PASO 7: Forzar recarga limpia
-    console.log('🔄 Recargando página...');
-    
-    // Pequeño delay para asegurar que todo se guardó
-    setTimeout(() => {
-      // Recargar forzando carga desde servidor (no cache)
-      window.location.href = window.location.pathname + '?t=' + Date.now();
-    }, 300);
+    // Volver a login
+    mostrarVentana('admin-login');
     
   } catch (error) {
-    console.error('💥 ERROR inesperado en cerrarSesionAdmin:', error);
-    
-    // Aún así, intentar limpiar y recargar
-    try {
-      // Limpiar tabla por si acaso
-      await supabase
-        .from('sesiones_activas')
-        .update({ activa: false })
-        .eq('tipo', 'admin');
-      
-      // Limpiar storage
-      localStorage.clear();
-      sessionStorage.clear();
-      
-    } catch (cleanupError) {
-      console.error('Error en limpieza de emergencia:', cleanupError);
-    }
-    
-    // Recargar de todas formas
-    alert('Sesión cerrada (puede haber habido errores menores). Recargando...');
-    setTimeout(() => location.reload(), 500);
+    console.error('Error en cerrarSesionAdmin:', error);
   }
 }
-
 // Entrar al panel admin
 async function entrarAdmin() {
   const { data: { session } } = await supabase.auth.getSession();
