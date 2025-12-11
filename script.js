@@ -11,7 +11,6 @@ let cantidadPermitida = 0;
 let promocionSeleccionada = null;
 let modoCartones = "libre";
 let cantidadFijaCartones = 1;
-let promoSeleccionada = false;
 
 // Variables de sesión
 let adminSession = null;
@@ -57,310 +56,444 @@ async function setConfigValue(clave, value) {
   return !error;
 }
 
-// ==================== SISTEMA DE AUTENTICACIÓN ====================
-// Función para crear la tabla de sesiones activas
-async function crearTablaSesiones() {
-  const { error } = await supabase
-    .from('sesiones_activas')
-    .upsert([
-      {
-        tipo: 'admin',
-        user_id: null,
-        activa: false,
-        ultima_actividad: new Date().toISOString()
-      }
-    ], { onConflict: 'tipo' });
-    
-  if (error && !error.message.includes('duplicate')) {
-    console.error('Error creando tabla sesiones:', error);
-  }
-}
+// ==================== FUNCIONES FALTANTES QUE NECESITA EL HTML ====================
 
-// Función para verificar sesión activa
-async function verificarSesionActiva() {
-  try {
-    const { data: sesionData, error } = await supabase
-      .from('sesiones_activas')
-      .select('*')
-      .eq('tipo', 'admin')
-      .single();
-      
-    if (error) {
-      if (error.code === 'PGRST116') {
-        await crearTablaSesiones();
-        return false;
-      }
-      console.error('Error verificando sesión:', error);
-      return false;
-    }
-    
-    if (sesionData && sesionData.activa) {
-      const ultimaActividad = new Date(sesionData.ultima_actividad);
-      const ahora = new Date();
-      const minutosDesdeUltimaActividad = (ahora - ultimaActividad) / (1000 * 60);
-      
-      if (minutosDesdeUltimaActividad > 30) {
-        await actualizarSesionActiva(null, false);
-        return false;
-      }
-      
-      return true;
-    }
-    return false;
-  } catch (error) {
-    console.error('Error en verificarSesionActiva:', error);
-    return false;
-  }
-}
+// Función para ver lista de aprobados (referenciada en HTML)
+async function verListaAprobados() {
+  const { data, error } = await supabase
+    .from('inscripciones')
+    .select('*')
+    .eq('estado', 'aprobado');
 
-// Función para actualizar sesión activa
-async function actualizarSesionActiva(userId, activa) {
-  try {
-    const { error } = await supabase
-      .from('sesiones_activas')
-      .upsert({
-        tipo: 'admin',
-        user_id: userId,
-        activa: activa,
-        ultima_actividad: new Date().toISOString()
-      }, { onConflict: 'tipo' });
-      
-    return !error;
-  } catch (error) {
-    console.error('Error actualizando sesión:', error);
-    return false;
-  }
-}
-
-// Función para actualizar actividad
-async function actualizarActividadSesion() {
-  if (sesionActiva) {
-    await supabase
-      .from('sesiones_activas')
-      .update({ ultima_actividad: new Date().toISOString() })
-      .eq('tipo', 'admin');
-  }
-}
-
-// Timer de inactividad
-function resetInactivityTimer() {
-  clearTimeout(inactivityTimer);
-  if (sesionActiva) {
-    inactivityTimer = setTimeout(async () => {
-      if (sesionActiva) {
-        alert('Sesión expirada por inactividad');
-        await cerrarSesionAdmin();
-      }
-    }, SESSION_TIMEOUT);
-  }
-}
-
-// Eventos para detectar actividad
-function iniciarDetectorActividad() {
-  ['click', 'mousemove', 'keypress', 'scroll'].forEach(event => {
-    document.addEventListener(event, () => {
-      if (sesionActiva) {
-        actualizarActividadSesion();
-        resetInactivityTimer();
-      }
-    });
-  });
-}
-
-// Función de login
-async function loginAdmin() {
-  const email = document.getElementById('admin-email').value.trim();
-  const password = document.getElementById('admin-password').value;
-  const errorDiv = document.getElementById('admin-error');
-  
-  errorDiv.textContent = '';
-  
-  if (!email || !password) {
-    errorDiv.textContent = 'Por favor ingresa email y contraseña';
+  const listaDiv = document.getElementById('listaAprobados');
+  if (!listaDiv) {
+    console.error('Elemento listaAprobados no encontrado');
     return;
   }
   
+  listaDiv.innerHTML = '';
+
+  if (error) {
+    console.error('Error al obtener aprobados:', error);
+    listaDiv.innerHTML = '<p>Error al obtener la lista.</p>';
+    return;
+  }
+
+  if (data.length === 0) {
+    listaDiv.innerHTML = '<p>No hay personas aprobadas.</p>';
+    return;
+  }
+
+  const tabla = document.createElement('table');
+  tabla.style.width = '100%';
+  tabla.style.borderCollapse = 'collapse';
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th style="border: 1px solid #ccc; padding: 8px;">Nombre</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Cédula</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Referido</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Teléfono</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Cartones</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
+  const tbody = tabla.querySelector('tbody');
+
+  data.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="border: 1px solid #ccc; padding: 8px;">${item.nombre || ''}</td>
+      <td style="border: 1px solid #ccc; padding: 8px;">${item.cedula || ''}</td>
+      <td style="border: 1px solid #ccc; padding: 8px;">${item.referido || ''}</td>
+      <td style="border: 1px solid #ccc; padding: 8px;">
+        <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, tu inscripción fue aprobada.`)}"
+           target="_blank" rel="noopener">
+          ${item.telefono || ''}
+        </a>
+      </td>
+      <td style="border: 1px solid #ccc; padding: 8px;">${Array.isArray(item.cartones) ? item.cartones.join(', ') : ''}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  listaDiv.appendChild(tabla);
+}
+
+// Función para detectar cartones duplicados (referenciada en HTML)
+async function detectarCartonesDuplicados() {
+  const boton = document.getElementById('btnDuplicados');
+  if (!boton) return;
+  
+  const prev = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Buscando duplicados...';
+
   try {
-    // Verificar si ya hay sesión activa
-    const haySesionActiva = await verificarSesionActiva();
-    if (haySesionActiva) {
-      const { data: currentSession } = await supabase.auth.getSession();
-      if (currentSession.session?.user?.email === email) {
-        // Es la misma sesión, continuar
-        sesionActiva = true;
-        mostrarPanelAdmin();
-        return;
-      } else {
-        errorDiv.textContent = 'Ya hay una sesión de administrador activa. Cierre la otra sesión primero.';
-        return;
+    // 1) Trae inscripciones activas
+    const { data, error } = await supabase
+      .from('inscripciones')
+      .select('id,nombre,cedula,estado,cartones')
+      .in('estado', ['pendiente', 'aprobado']);
+
+    if (error) throw error;
+
+    // 2) Construye índice
+    const indice = new Map();
+
+    (data || []).forEach(ins => {
+      if (!Array.isArray(ins.cartones)) return;
+
+      const únicos = new Set(
+        ins.cartones
+          .map(x => {
+            if (typeof x === 'number') return x;
+            if (typeof x === 'string') return parseInt(x, 10);
+            try {
+              const s = (x && typeof x === 'object') ? JSON.stringify(x) : String(x);
+              return parseInt(s.replace(/[^0-9\-]/g,''), 10);
+            } catch { return NaN; }
+          })
+          .filter(n => Number.isFinite(n))
+      );
+
+      únicos.forEach(n => {
+        if (!indice.has(n)) indice.set(n, []);
+        indice.get(n).push({ id: ins.id, nombre: ins.nombre || '', cedula: ins.cedula || '' });
+      });
+    });
+
+    // 3) Filtra sólo números con más de un dueño
+    const duplicados = [];
+    const duplicadosSet = new Set();
+    
+    for (const [numero, dueños] of indice.entries()) {
+      if (dueños.length > 1) {
+        duplicados.push({
+          numero,
+          personas: dueños,
+          veces: dueños.length
+        });
+        duplicadosSet.add(numero);
       }
     }
+
+    // 4) Ordena
+    duplicados.sort((a, b) => (b.veces - a.veces) || (a.numero - b.numero));
+
+    // 5) Renderiza resultados
+    renderDuplicados(duplicados);
     
-    // Intentar login con Supabase Auth
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password
+    // 6) Resalta celdas
+    resaltarCeldasDuplicadas(duplicadosSet);
+
+  } catch (e) {
+    console.error(e);
+    const cont = document.getElementById('duplicadosResultado');
+    if (cont) {
+      cont.innerHTML = '<p style="color:#f44336;">Error buscando duplicados. Revisa la consola.</p>';
+    }
+  } finally {
+    boton.disabled = false;
+    boton.textContent = prev;
+  }
+}
+
+// Función auxiliar para renderizar duplicados
+function renderDuplicados(lista) {
+  const cont = document.getElementById('duplicadosResultado');
+  if (!cont) return;
+  
+  cont.innerHTML = '';
+
+  if (!lista.length) {
+    cont.innerHTML = '<p style="color:#4caf50;font-weight:bold;">No se encontraron cartones duplicados en inscripciones activas.</p>';
+    return;
+  }
+
+  const tabla = document.createElement('table');
+  tabla.style.width = '100%';
+  tabla.style.borderCollapse = 'collapse';
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th style="border:1px solid #ccc;padding:6px;">Cartón</th>
+        <th style="border:1px solid #ccc;padding:6px;">Personas</th>
+        <th style="border:1px solid #ccc;padding:6px;">Veces</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  
+  const tbody = tabla.querySelector('tbody');
+
+  lista.forEach(row => {
+    const tr = document.createElement('tr');
+    
+    const tdNumero = document.createElement('td');
+    tdNumero.style.border = '1px solid #ccc';
+    tdNumero.style.padding = '6px';
+    tdNumero.textContent = String(row.numero);
+    
+    const tdPersonas = document.createElement('td');
+    tdPersonas.style.border = '1px solid #ccc';
+    tdPersonas.style.padding = '6px';
+    tdPersonas.textContent = row.personas.map(p => `${p.nombre} (${p.cedula})`).join(', ');
+    
+    const tdVeces = document.createElement('td');
+    tdVeces.style.border = '1px solid #ccc';
+    tdVeces.style.padding = '6px';
+    tdVeces.textContent = String(row.veces);
+    
+    tr.appendChild(tdNumero);
+    tr.appendChild(tdPersonas);
+    tr.appendChild(tdVeces);
+    tbody.appendChild(tr);
+  });
+
+  cont.appendChild(tabla);
+}
+
+// Función auxiliar para resaltar celdas duplicadas
+function resaltarCeldasDuplicadas(duplicadosSet) {
+  const cartonesCells = document.querySelectorAll('#tabla-comprobantes tbody tr td:nth-child(5)');
+  cartonesCells.forEach(td => {
+    const nums = td.textContent
+      .split(',')
+      .map(s => parseInt(s.trim(), 10))
+      .filter(n => Number.isFinite(n));
+
+    const tieneDuplicado = nums.some(n => duplicadosSet.has(n));
+    td.style.backgroundColor = tieneDuplicado ? 'rgba(255,0,0,0.18)' : '';
+  });
+}
+
+// Función para ver huérfanos (referenciada en HTML)
+async function verHuerfanos() {
+  const btn = document.getElementById('btnVerHuerfanos');
+  if (!btn) return;
+  
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Buscando...';
+  
+  try {
+    // Llamar a la función RPC en Supabase
+    const { data, error } = await supabase.rpc('rpc_listar_cartones_huerfanos', {
+      _min_age: '0 minutes'
     });
     
-    if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        errorDiv.textContent = 'Credenciales incorrectas';
-      } else {
-        errorDiv.textContent = error.message;
-      }
-      return;
+    if (error) throw error;
+    
+    renderTablaHuerfanos(data || []);
+    
+  } catch (e) {
+    console.error(e);
+    const resultado = document.getElementById('huerfanosResultado');
+    if (resultado) {
+      resultado.innerHTML = '<p style="color:#f44336;">Error buscando huérfanos. Revisa consola.</p>';
     }
-    
-    // Verificar que sea el admin único
-    if (data.user.email !== ADMIN_EMAIL) {
-      await supabase.auth.signOut();
-      errorDiv.textContent = 'No tiene permisos de administrador';
-      return;
-    }
-    
-    // Registrar sesión activa
-    await actualizarSesionActiva(data.user.id, true);
-    
-    // Guardar sesión
-    adminSession = data.session;
-    sesionActiva = true;
-    
-    // Mostrar panel admin
-    document.getElementById('admin-email-display').textContent = data.user.email;
-    await mostrarPanelAdmin();
-    
-    // Iniciar detector de actividad
-    iniciarDetectorActividad();
-    resetInactivityTimer();
-    
-  } catch (error) {
-    console.error('Error login:', error);
-    errorDiv.textContent = 'Error al iniciar sesión';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
   }
 }
 
-// Función para cerrar sesión
-async function cerrarSesionAdmin() {
+// Función para renderizar tabla de huérfanos
+function renderTablaHuerfanos(rows) {
+  const cont = document.getElementById('huerfanosResultado');
+  if (!cont) return;
+  
+  cont.innerHTML = '';
+
+  if (!rows || rows.length === 0) {
+    cont.innerHTML = '<p style="color:#4caf50;font-weight:bold;">No hay cartones huérfanos.</p>';
+    return;
+  }
+
+  const tabla = document.createElement('table');
+  tabla.style.width = '100%';
+  tabla.style.borderCollapse = 'collapse';
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th style="border:1px solid #ccc;padding:6px;">Cartón</th>
+        <th style="border:1px solid #ccc;padding:6px;">Reservado desde</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  
+  const tbody = tabla.querySelector('tbody');
+
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    
+    const tdNumero = document.createElement('td');
+    tdNumero.style.border = '1px solid #ccc';
+    tdNumero.style.padding = '6px';
+    tdNumero.textContent = r.numero;
+    
+    const tdFecha = document.createElement('td');
+    tdFecha.style.border = '1px solid #ccc';
+    tdFecha.style.padding = '6px';
+    tdFecha.textContent = r.created_at ? new Date(r.created_at).toLocaleString() : '';
+    
+    tr.appendChild(tdNumero);
+    tr.appendChild(tdFecha);
+    tbody.appendChild(tr);
+  });
+
+  cont.appendChild(tabla);
+}
+
+// Función para liberar huérfanos (referenciada en HTML)
+async function liberarHuerfanos() {
+  if (!confirm('¿Liberar todos los cartones huérfanos?')) return;
+  
+  const btn = document.getElementById('btnLiberarHuerfanos');
+  if (!btn) return;
+  
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Limpiando...';
+  
   try {
-    // Limpiar sesión activa
-    await actualizarSesionActiva(null, false);
+    const { data, error } = await supabase.rpc('rpc_liberar_cartones_huerfanos', {
+      _min_age: '0 minutes'
+    });
     
-    // Cerrar sesión en Supabase
-    const { error } = await supabase.auth.signOut();
-    if (error) console.error('Error cerrando sesión:', error);
+    if (error) throw error;
+
+    alert(`Listo. Cartones liberados: ${data ?? 0}`);
     
-    // Limpiar variables
-    adminSession = null;
-    sesionActiva = false;
-    clearTimeout(inactivityTimer);
+    // Refrescar UI
+    await verHuerfanos();
+    await cargarCartones();
+    await contarCartonesVendidos();
     
-    // Limpiar formulario
-    document.getElementById('admin-email').value = '';
-    document.getElementById('admin-password').value = '';
-    document.getElementById('admin-error').textContent = '';
-    
-    // Volver a login
-    mostrarVentana('admin-login');
-    
-  } catch (error) {
-    console.error('Error en cerrarSesionAdmin:', error);
+  } catch (e) {
+    console.error(e);
+    alert('Error al liberar huérfanos.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
   }
 }
 
-// Función para mostrar panel admin
-async function mostrarPanelAdmin() {
-  // Ocultar login y mostrar panel
-  document.getElementById('admin-login').classList.add('oculto');
-  document.getElementById('admin-panel').classList.remove('oculto');
-  
-  // Cargar datos del panel
-  await cargarPanelAdmin();
+// Función para guardar precio por cartón (referenciada en HTML)
+async function guardarPrecioPorCarton() {
+  const nuevoPrecio = parseFloat(document.getElementById('precioCarton').value);
+  if (isNaN(nuevoPrecio) || nuevoPrecio < 0) {
+    alert('Ingrese un precio válido');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('configuracion')
+    .upsert({ clave: 'precio_carton', valore: nuevoPrecio.toString() }, { onConflict: 'clave' });
+
+  if (error) {
+    alert('Error guardando el precio');
+    console.error(error);
+  } else {
+    alert('Precio actualizado correctamente');
+    precioPorCarton = nuevoPrecio;
+    // Recargar el precio en la interfaz
+    await cargarPrecioPorCarton();
+  }
 }
 
-// Entrar al panel admin
-async function entrarAdmin() {
-  // Verificar si ya está autenticado
-  const { data: { session } } = await supabase.auth.getSession();
+// ==================== FUNCIONES EXISTENTES QUE NECESITAN CORRECCIÓN ====================
+
+// Función para obtener el monto total recaudado (corregida)
+async function obtenerMontoTotalRecaudado() {
+   const { data, error } = await supabase
+    .from('inscripciones')
+    .select('monto_bs, cartones')
+    .eq('estado', 'aprobado'); 
+
+  if (error) {
+    console.error('Error al obtener inscripciones:', error.message);
+    return;
+  }
+
+  let total = 0;
   
-  if (session) {
-    // Verificar que sea el admin único
-    if (session.user.email === ADMIN_EMAIL) {
-      // Verificar que no haya otra sesión activa
-      const haySesionActiva = await verificarSesionActiva();
-      if (haySesionActiva) {
-        // Verificar si es la misma sesión
-        const { data: sesionData } = await supabase
-          .from('sesiones_activas')
-          .select('user_id')
-          .eq('tipo', 'admin')
-          .single();
-          
-        if (sesionData?.user_id === session.user.id) {
-          // Es la misma sesión, mostrar panel
-          adminSession = session;
-          sesionActiva = true;
-          document.getElementById('admin-email-display').textContent = session.user.email;
-          await mostrarPanelAdmin();
-          iniciarDetectorActividad();
-          resetInactivityTimer();
-          return;
-        } else {
-          // Otra sesión está activa
-          alert('Ya hay una sesión de administrador activa en otro dispositivo/navegador.');
-          mostrarVentana('admin-login');
-          return;
-        }
+  for (const ins of (data || [])) {
+    let m = Number(ins.monto_bs);
+    if (!(m > 0)) {
+      const unidades = Array.isArray(ins.cartones) ? ins.cartones.length : 0;
+      m = unidades * (precioPorCarton || 0);
+    }
+    total += m;
+  }
+
+  const totalElement = document.getElementById('totalMonto');
+  if (totalElement) {
+    totalElement.textContent = new Intl.NumberFormat('es-VE', { 
+      style: 'currency', 
+      currency: 'VES' 
+    }).format(total);
+  }
+}
+
+// Función para contar cartones vendidos (corregida)
+async function contarCartonesVendidos() {
+  const { count, error } = await supabase
+    .from('cartones')
+    .select('numero', { count: 'exact', head: true });
+
+  if (error) {
+    console.error('Error al contar cartones:', error);
+    return;
+  }
+  
+  const totalVendidosElement = document.getElementById('total-vendidos');
+  if (totalVendidosElement) {
+    totalVendidosElement.textContent = count || 0;
+  }
+  
+  return count || 0;
+}
+
+// Función para renderizar botones de promociones (corregida)
+function renderizarBotonesPromociones() {
+  const promoBox = document.getElementById('promoBox');
+  if (!promoBox) return;
+
+  let algunaActiva = false;
+  
+  promociones.forEach((promo, index) => {
+    const boton = document.querySelector(`[data-promo="${index + 1}"]`);
+    const descElement = document.getElementById(`promo-desc-${index + 1}`);
+    const precioElement = document.getElementById(`promo-precio-${index + 1}`);
+    
+    if (boton && descElement && precioElement) {
+      if (promo.activa && promo.cantidad > 0 && promo.precio > 0) {
+        descElement.textContent = promo.descripcion;
+        precioElement.textContent = `${promo.precio.toFixed(2)} Bs`;
+        boton.classList.remove('desactivado');
+        algunaActiva = true;
+        boton.title = `${promo.cantidad} cartones por ${promo.precio.toFixed(2)} Bs`;
+        
+        // Habilitar clic
+        boton.onclick = () => seleccionarPromocion(index + 1);
       } else {
-        // No hay sesión activa, iniciar nueva
-        adminSession = session;
-        sesionActiva = true;
-        await actualizarSesionActiva(session.user.id, true);
-        document.getElementById('admin-email-display').textContent = session.user.email;
-        await mostrarPanelAdmin();
-        iniciarDetectorActividad();
-        resetInactivityTimer();
-        return;
+        descElement.textContent = `Promo ${index + 1} (No disponible)`;
+        precioElement.textContent = 'No disponible';
+        boton.classList.add('desactivado');
+        boton.onclick = null;
       }
-    } else {
-      // No es el admin, cerrar sesión
-      await cerrarSesionAdmin();
+      
+      // Remover selección anterior
+      boton.classList.remove('seleccionado');
     }
-  }
+  });
   
-  // Mostrar formulario de login
-  mostrarVentana('admin-login');
-}
-
-// Verificar sesión al cargar la página
-async function verificarSesionInicial() {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session && session.user.email === ADMIN_EMAIL) {
-      const haySesionActiva = await verificarSesionActiva();
-      if (haySesionActiva) {
-        const { data: sesionData } = await supabase
-          .from('sesiones_activas')
-          .select('user_id')
-          .eq('tipo', 'admin')
-          .single();
-          
-        if (sesionData?.user_id === session.user.id) {
-          // Sesión válida
-          adminSession = session;
-          sesionActiva = true;
-          document.getElementById('admin-email-display').textContent = session.user.email;
-          iniciarDetectorActividad();
-          resetInactivityTimer();
-        } else {
-          // Otra sesión está activa
-          await cerrarSesionAdmin();
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error verificando sesión inicial:', error);
-  }
+  promoBox.classList.toggle('oculto', !algunaActiva);
 }
 
 // ==================== FUNCIONES PRINCIPALES ====================
@@ -374,7 +507,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Verificar sesión al cargar
   await verificarSesionInicial();
   
-  // Event listeners
+  // Event listeners específicos
   document.getElementById('guardarPromocionesBtn')?.addEventListener('click', guardarPromociones);
   document.getElementById('btnDupNombreAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorNombre);
   document.getElementById('btnDupReferenciaAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorReferencia);
@@ -426,28 +559,50 @@ function generarCartones() {
 }
 
 function actualizarPreseleccion() {
-  const cant = parseInt(document.getElementById('cantidadCartones').value) || 1;
+  let cant = parseInt(document.getElementById('cantidadCartones').value) || 1;
   const maxDisponibles = totalCartones - cartonesOcupados.length;
-  const cantidadValida = Math.min(cant, maxDisponibles);
+  
+  // En modo fijo, la cantidad siempre es la fija
+  if (modoCartones === 'fijo') {
+    cant = cantidadFijaCartones;
+    document.getElementById('cantidadCartones').value = cantidadFijaCartones;
+  } else {
+    // En modo libre, limitar por disponibilidad
+    cant = Math.min(cant, maxDisponibles);
+    document.getElementById('cantidadCartones').value = cant;
+  }
 
-  document.getElementById('cantidadCartones').value = cantidadValida;
   document.getElementById('monto-preseleccion').textContent =
-    (cantidadValida * precioPorCarton).toFixed(2);
+    (cant * precioPorCarton).toFixed(2);
 }
 
-// botones + y −
+// botones + y − - CORREGIDOS
 document.getElementById('btnMas').onclick = () => {
+  // En modo fijo, no permitir aumentar
+  if (modoCartones === 'fijo') {
+    return;
+  }
   document.getElementById('cantidadCartones').stepUp();
   limpiarPromoPorCambioCantidad();
 };
 
 document.getElementById('btnMenos').onclick = () => {
+  // En modo fijo, no permitir disminuir
+  if (modoCartones === 'fijo') {
+    return;
+  }
   document.getElementById('cantidadCartones').stepDown();
   limpiarPromoPorCambioCantidad();
 };
 
-// detectar tecleo manual
-document.getElementById('cantidadCartones').addEventListener('input', limpiarPromoPorCambioCantidad);
+// detectar tecleo manual - CORREGIDO
+document.getElementById('cantidadCartones').addEventListener('input', function() {
+  // En modo fijo, bloquear entrada manual
+  if (modoCartones === 'fijo') {
+    this.value = cantidadFijaCartones;
+  }
+  limpiarPromoPorCambioCantidad();
+});
 
 function limpiarPromoPorCambioCantidad() {
   if (promocionSeleccionada) {
@@ -541,9 +696,11 @@ function confirmarCantidad() {
     
     if (modoCartones === 'fijo') {
       if (cant !== cantidadFijaCartones) {
-        return alert(`Debes seleccionar exactamente ${cantidadFijaCartones} cartones.`);
+        // Bloquear entrada de usuario si no es la cantidad fija
+        document.getElementById('cantidadCartones').value = cantidadFijaCartones;
+        cant = cantidadFijaCartones; // Asegurar que use la cantidad fija
       }
-    } else {
+    } else { // Modo libre
       if (isNaN(cant) || cant < 1) {
         return alert('Ingresa un número válido');
       }
@@ -1059,42 +1216,6 @@ async function guardarNuevoTotal() {
   }
 }
 
-async function contarCartonesVendidos() {
-  const { count, error } = await supabase
-    .from('cartones')
-    .select('numero', { count: 'exact', head: true });
-
-  if (error) {
-    console.error('Error al contar cartones:', error);
-    return;
-  }
-  document.getElementById('total-vendidos').textContent = count || 0;
-}
-
-async function obtenerMontoTotalRecaudado() {
-  const { data, error } = await supabase
-    .from('inscripciones')
-    .select('monto_bs, cartones');
-
-  if (error) {
-    console.error('Error al obtener inscripciones:', error.message);
-    return;
-  }
-
-  let total = 0;
-  for (const ins of (data || [])) {
-    let m = Number(ins.monto_bs);
-    if (!(m > 0)) {
-      const unidades = Array.isArray(ins.cartones) ? ins.cartones.length : 0;
-      m = unidades * (precioPorCarton || 0);
-    }
-    total += m;
-  }
-
-  document.getElementById('totalMonto').textContent =
-    new Intl.NumberFormat('es-VE', { style: 'currency', currency: 'VES' }).format(total);
-}
-
 async function cargarPromocionesConfig() {
   try {
     for (let i = 0; i < promociones.length; i++) {
@@ -1112,36 +1233,6 @@ async function cargarPromocionesConfig() {
   } catch (error) {
     console.error('Error cargando promociones:', error);
   }
-}
-
-function renderizarBotonesPromociones() {
-  const promoBox = document.getElementById('promoBox');
-  if (!promoBox) return;
-
-  let algunaActiva = false;
-  
-  promociones.forEach((promo, index) => {
-    const boton = document.querySelector(`[data-promo="${index + 1}"]`);
-    const descElement = document.getElementById(`promo-desc-${index + 1}`);
-    const precioElement = document.getElementById(`promo-precio-${index + 1}`);
-    
-    if (boton && descElement && precioElement) {
-      if (promo.activa && promo.cantidad > 0 && promo.precio > 0) {
-        descElement.textContent = promo.descripcion;
-        precioElement.textContent = `${promo.precio.toFixed(2)} Bs`;
-        boton.classList.remove('desactivado');
-        algunaActiva = true;
-        boton.title = `${promo.cantidad} cartones por ${promo.precio.toFixed(2)} Bs`;
-      } else {
-        descElement.textContent = `Promo ${index + 1} (No disponible)`;
-        precioElement.textContent = 'No disponible';
-        boton.classList.add('desactivado');
-      }
-      boton.classList.remove('seleccionado');
-    }
-  });
-  
-  promoBox.classList.toggle('oculto', !algunaActiva);
 }
 
 async function cargarPromocionesAdmin() {
@@ -1393,7 +1484,17 @@ async function cargarConfiguracionModoCartones() {
 
     if (!cantError && cantData) {
       cantidadFijaCartones = parseInt(cantData.valore) || 1;
+      document.getElementById('cantidadCartones').value = cantidadFijaCartones;
+      // Deshabilitar botones en modo fijo
+      document.getElementById('btnMas').disabled = true;
+      document.getElementById('btnMenos').disabled = true;
+      document.getElementById('cantidadCartones').readOnly = true;
     }
+  } else {
+    // Habilitar botones en modo libre
+    document.getElementById('btnMas').disabled = false;
+    document.getElementById('btnMenos').disabled = false;
+    document.getElementById('cantidadCartones').readOnly = false;
   }
 }
 
@@ -1428,6 +1529,18 @@ function cambiarModoCartones() {
   const modo = document.getElementById('modoCartonesSelect').value;
   const contenedor = document.getElementById('contenedorCartonesFijos');
   contenedor.style.display = (modo === 'fijo') ? 'block' : 'none';
+  
+  // Previsualizar el cambio
+  if (modo === 'fijo') {
+    const cantidad = document.getElementById('cantidadCartonesFijos').value || 1;
+    document.getElementById('btnMas').disabled = true;
+    document.getElementById('btnMenos').disabled = true;
+    document.getElementById('cantidadCartones').readOnly = true;
+  } else {
+    document.getElementById('btnMas').disabled = false;
+    document.getElementById('btnMenos').disabled = false;
+    document.getElementById('cantidadCartones').readOnly = false;
+  }
 }
 
 async function guardarModoCartones() {
@@ -1454,6 +1567,8 @@ async function guardarModoCartones() {
     console.error(error);
   } else {
     alert('Modo actualizado correctamente');
+    // Recargar configuración
+    await cargarConfiguracionModoCartones();
   }
 }
 
@@ -1822,64 +1937,6 @@ async function detectarDuplicadosAprobadosPorReferencia() {
   renderDuplicadosAprobados(duplicados, 'referencia');
 }
 
-async function verListaAprobados() {
-  const { data, error } = await supabase
-    .from('inscripciones')
-    .select('*')
-    .eq('estado', 'aprobado');
-
-  const listaDiv = document.getElementById('listaAprobados');
-  listaDiv.innerHTML = '';
-
-  if (error) {
-    console.error('Error al obtener aprobados:', error);
-    listaDiv.innerHTML = '<p>Error al obtener la lista.</p>';
-    return;
-  }
-
-  if (data.length === 0) {
-    listaDiv.innerHTML = '<p>No hay personas aprobadas.</p>';
-    return;
-  }
-
-  const tabla = document.createElement('table');
-  tabla.style.width = '100%';
-  tabla.style.borderCollapse = 'collapse';
-  tabla.innerHTML = `
-    <thead>
-      <tr>
-        <th style="border: 1px solid #ccc; padding: 8px;">Nombre</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Cédula</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Referido</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Teléfono</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Cartones</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-
-  const tbody = tabla.querySelector('tbody');
-
-  data.forEach(item => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.nombre}</td>
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.cedula}</td>
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.referido}</td>
-      <td style="border: 1px solid #ccc; padding: 8px;">
-        <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, tu inscripción fue aprobada.`)}"
-           target="_blank" rel="noopener">
-          ${item.telefono}
-        </a>
-      </td>
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.cartones.join(', ')}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  listaDiv.appendChild(tabla);
-}
-
 function imprimirLista() {
   const lista = document.getElementById('listaAprobados');
   if (!lista.innerHTML.trim()) {
@@ -1976,27 +2033,338 @@ async function borrarCartones() {
   setTimeout(() => { status.innerHTML = ''; }, 5000);
 }
 
-async function guardarPrecioPorCarton() {
-  const nuevoPrecio = parseFloat(document.getElementById('precioCarton').value);
-  if (isNaN(nuevoPrecio) || nuevoPrecio < 0) {
-    alert('Ingrese un precio válido');
-    return;
-  }
-
-  const { error } = await supabase
-    .from('configuracion')
-    .upsert({ clave: 'precio_por_carton', valore: nuevoPrecio }, { onConflict: 'clave' });
-
-  if (error) {
-    alert('Error guardando el precio');
-    console.error(error);
-  } else {
-    alert('Precio actualizado correctamente');
-    precioPorCarton = nuevoPrecio;
-    actualizarMonto();
-  }
-}
-
 // ==================== INICIALIZACIÓN ====================
 // Inicializar detector de actividad
 iniciarDetectorActividad();
+
+// ==================== SISTEMA DE AUTENTICACIÓN ====================
+// Función para crear la tabla de sesiones activas
+async function crearTablaSesiones() {
+  const { error } = await supabase
+    .from('sesiones_activas')
+    .upsert([
+      {
+        tipo: 'admin',
+        user_id: null,
+        activa: false,
+        ultima_actividad: new Date().toISOString()
+      }
+    ], { onConflict: 'tipo' });
+    
+  if (error && !error.message.includes('duplicate')) {
+    console.error('Error creando tabla sesiones:', error);
+  }
+}
+
+// Función para verificar sesión activa
+async function verificarSesionActiva() {
+  try {
+    const { data: sesionData, error } = await supabase
+      .from('sesiones_activas')
+      .select('*')
+      .eq('tipo', 'admin')
+      .single();
+      
+    if (error) {
+      if (error.code === 'PGRST116') {
+        await crearTablaSesiones();
+        return false;
+      }
+      console.error('Error verificando sesión:', error);
+      return false;
+    }
+    
+    if (sesionData && sesionData.activa) {
+      const ultimaActividad = new Date(sesionData.ultima_actividad);
+      const ahora = new Date();
+      const minutosDesdeUltimaActividad = (ahora - ultimaActividad) / (1000 * 60);
+      
+      if (minutosDesdeUltimaActividad > 30) {
+        await actualizarSesionActiva(null, false);
+        return false;
+      }
+      
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Error en verificarSesionActiva:', error);
+    return false;
+  }
+}
+
+// Función para actualizar sesión activa
+async function actualizarSesionActiva(userId, activa) {
+  try {
+    const { error } = await supabase
+      .from('sesiones_activas')
+      .upsert({
+        tipo: 'admin',
+        user_id: userId,
+        activa: activa,
+        ultima_actividad: new Date().toISOString()
+      }, { onConflict: 'tipo' });
+      
+    return !error;
+  } catch (error) {
+    console.error('Error actualizando sesión:', error);
+    return false;
+  }
+}
+
+// Función para actualizar actividad
+async function actualizarActividadSesion() {
+  if (sesionActiva) {
+    await supabase
+      .from('sesiones_activas')
+      .update({ ultima_actividad: new Date().toISOString() })
+      .eq('tipo', 'admin');
+  }
+}
+
+// Función de login
+async function loginAdmin() {
+  const email = document.getElementById('admin-email').value.trim();
+  const password = document.getElementById('admin-password').value;
+  const errorDiv = document.getElementById('admin-error');
+  
+  errorDiv.textContent = '';
+  
+  if (!email || !password) {
+    errorDiv.textContent = 'Por favor ingresa email y contraseña';
+    return;
+  }
+  
+  try {
+    // Verificar si ya hay sesión activa
+    const haySesionActiva = await verificarSesionActiva();
+    if (haySesionActiva) {
+      const { data: currentSession } = await supabase.auth.getSession();
+      if (currentSession.session?.user?.email === email) {
+        // Es la misma sesión, continuar
+        sesionActiva = true;
+        mostrarPanelAdmin();
+        return;
+      } else {
+        errorDiv.textContent = 'Ya hay una sesión de administrador activa. Cierre la otra sesión primero.';
+        return;
+      }
+    }
+    
+    // Intentar login con Supabase Auth
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+    
+    if (error) {
+      if (error.message.includes('Invalid login credentials')) {
+        errorDiv.textContent = 'Credenciales incorrectas';
+      } else {
+        errorDiv.textContent = error.message;
+      }
+      return;
+    }
+    
+    // Verificar que sea el admin único
+    if (data.user.email !== ADMIN_EMAIL) {
+      await supabase.auth.signOut();
+      errorDiv.textContent = 'No tiene permisos de administrador';
+      return;
+    }
+    
+    // Registrar sesión activa
+    await actualizarSesionActiva(data.user.id, true);
+    
+    // Guardar sesión
+    adminSession = data.session;
+    sesionActiva = true;
+    
+    // Mostrar panel admin
+    document.getElementById('admin-email-display').textContent = data.user.email;
+    await mostrarPanelAdmin();
+    
+    // Iniciar detector de actividad
+    iniciarDetectorActividad();
+    resetInactivityTimer();
+    
+  } catch (error) {
+    console.error('Error login:', error);
+    errorDiv.textContent = 'Error al iniciar sesión';
+  }
+}
+
+// Función para cerrar sesión
+async function cerrarSesionAdmin() {
+  try {
+    // Limpiar sesión activa
+    await actualizarSesionActiva(null, false);
+    
+    // Cerrar sesión en Supabase
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error('Error cerrando sesión:', error);
+    
+    // Limpiar variables
+    adminSession = null;
+    sesionActiva = false;
+    clearTimeout(inactivityTimer);
+    
+    // Limpiar formulario
+    document.getElementById('admin-email').value = '';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('admin-error').textContent = '';
+    
+    // Volver a login
+    mostrarVentana('admin-login');
+    
+  } catch (error) {
+    console.error('Error en cerrarSesionAdmin:', error);
+  }
+}
+
+// Función para mostrar panel admin
+async function mostrarPanelAdmin() {
+  // Ocultar login y mostrar panel
+  document.getElementById('admin-login').classList.add('oculto');
+  document.getElementById('admin-panel').classList.remove('oculto');
+  
+  // Cargar datos del panel
+  await cargarPanelAdmin();
+}
+
+// Entrar al panel admin
+async function entrarAdmin() {
+  // Verificar si ya está autenticado
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (session) {
+    // Verificar que sea el admin único
+    if (session.user.email === ADMIN_EMAIL) {
+      // Verificar que no haya otra sesión activa
+      const haySesionActiva = await verificarSesionActiva();
+      if (haySesionActiva) {
+        // Verificar si es la misma sesión
+        const { data: sesionData } = await supabase
+          .from('sesiones_activas')
+          .select('user_id')
+          .eq('tipo', 'admin')
+          .single();
+          
+        if (sesionData?.user_id === session.user.id) {
+          // Es la misma sesión, mostrar panel
+          adminSession = session;
+          sesionActiva = true;
+          document.getElementById('admin-email-display').textContent = session.user.email;
+          await mostrarPanelAdmin();
+          iniciarDetectorActividad();
+          resetInactivityTimer();
+          return;
+        } else {
+          // Otra sesión está activa
+          alert('Ya hay una sesión de administrador activa en otro dispositivo/navegador.');
+          mostrarVentana('admin-login');
+          return;
+        }
+      } else {
+        // No hay sesión activa, iniciar nueva
+        adminSession = session;
+        sesionActiva = true;
+        await actualizarSesionActiva(session.user.id, true);
+        document.getElementById('admin-email-display').textContent = session.user.email;
+        await mostrarPanelAdmin();
+        iniciarDetectorActividad();
+        resetInactivityTimer();
+        return;
+      }
+    } else {
+      // No es el admin, cerrar sesión
+      await cerrarSesionAdmin();
+    }
+  }
+  
+  // Mostrar formulario de login
+  mostrarVentana('admin-login');
+}
+
+// Verificar sesión al cargar la página
+async function verificarSesionInicial() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session && session.user.email === ADMIN_EMAIL) {
+      const haySesionActiva = await verificarSesionActiva();
+      if (haySesionActiva) {
+        const { data: sesionData } = await supabase
+          .from('sesiones_activas')
+          .select('user_id')
+          .eq('tipo', 'admin')
+          .single();
+          
+        if (sesionData?.user_id === session.user.id) {
+          // Sesión válida
+          adminSession = session;
+          sesionActiva = true;
+          document.getElementById('admin-email-display').textContent = session.user.email;
+          iniciarDetectorActividad();
+          resetInactivityTimer();
+        } else {
+          // Otra sesión está activa
+          await cerrarSesionAdmin();
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error verificando sesión inicial:', error);
+  }
+}
+
+// Timer de inactividad
+function resetInactivityTimer() {
+  clearTimeout(inactivityTimer);
+  if (sesionActiva) {
+    inactivityTimer = setTimeout(async () => {
+      if (sesionActiva) {
+        alert('Sesión expirada por inactividad');
+        await cerrarSesionAdmin();
+      }
+    }, SESSION_TIMEOUT);
+  }
+}
+
+// Eventos para detectar actividad
+function iniciarDetectorActividad() {
+  ['click', 'mousemove', 'keypress', 'scroll'].forEach(event => {
+    document.addEventListener(event, () => {
+      if (sesionActiva) {
+        actualizarActividadSesion();
+        resetInactivityTimer();
+      }
+    });
+  });
+}
+
+// Exportar funciones al scope global
+window.mostrarVentana = mostrarVentana;
+window.guardarDatosInscripcion = guardarDatosInscripcion;
+window.confirmarCantidad = confirmarCantidad;
+window.enviarComprobante = enviarComprobante;
+window.consultarCartones = consultarCartones;
+window.elegirMasCartones = elegirMasCartones;
+window.entrarAdmin = entrarAdmin;
+window.cerrarSesionAdmin = cerrarSesionAdmin;
+window.loginAdmin = loginAdmin;
+window.toggleCarton = toggleCarton;
+window.abrirModalCarton = abrirModalCarton;
+window.cerrarModalCarton = cerrarModalCarton;
+window.seleccionarPromocion = seleccionarPromocion;
+window.deseleccionarPromocion = deseleccionarPromocion;
+window.cerrarTerminos = cerrarTerminos;
+window.toggleFormularioGanador = toggleFormularioGanador;
+window.guardarGanador = guardarGanador;
+window.ordenarInscripcionesPorNombre = ordenarInscripcionesPorNombre;
+window.ordenarPorCedula = ordenarPorCedula;
+window.ordenarPorReferencia = ordenarPorReferencia;
+window.activarCohetes = activarCohetes;
+window.mostrarSeccion = mostrarSeccion;
+
+console.log('✅ Todas las funciones han sido cargadas correctamente');
