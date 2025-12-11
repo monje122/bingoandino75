@@ -2067,7 +2067,7 @@ async function borrarCartones() {
 // Inicializar detector de actividad
 iniciarDetectorActividad();
 
-// ==================== SISTEMA DE AUTENTICACIÓN ====================
+// ==================== SISTEMA DE AUTENTICACIÓN OTP ====================
 // Función para crear la tabla de sesiones activas
 async function crearTablaSesiones() {
   const { error } = await supabase
@@ -2152,76 +2152,139 @@ async function actualizarActividadSesion() {
   }
 }
 
-// Función de login
+// ==================== FUNCIÓN LOGIN OTP ====================
 async function loginAdmin() {
   const email = document.getElementById('admin-email').value.trim();
-  const password = document.getElementById('admin-password').value;
   const errorDiv = document.getElementById('admin-error');
   
   errorDiv.textContent = '';
   
-  if (!email || !password) {
-    errorDiv.textContent = 'Por favor ingresa email y contraseña';
+  if (!email) {
+    errorDiv.textContent = 'Por favor ingresa tu correo electrónico';
+    return;
+  }
+  
+  // Verificar que sea el email del administrador
+  if (email !== ADMIN_EMAIL) {
+    errorDiv.textContent = 'No tiene permisos de administrador';
     return;
   }
   
   try {
-    // Verificar si ya hay sesión activa
+    // Etapa 1: Solicitar OTP por email
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: {
+        // NO crear usuario nuevo si no existe
+        shouldCreateUser: false,
+      }
+    });
+    
+    if (otpError) {
+      console.error('Error enviando OTP:', otpError);
+      
+      if (otpError.message.includes('rate limit')) {
+        errorDiv.textContent = 'Demasiados intentos. Espera unos minutos.';
+      } else if (otpError.message.includes('disabled')) {
+        errorDiv.textContent = 'El login por email está deshabilitado. Contacta al administrador.';
+      } else {
+        errorDiv.textContent = 'Error enviando el código: ' + otpError.message;
+      }
+      return;
+    }
+    
+    // Mostrar mensaje de éxito
+    errorDiv.innerHTML = '✅ <strong>Código enviado!</strong> Revisa tu correo y introduce el código de 6 dígitos.';
+    errorDiv.style.color = 'green';
+    
+    // Etapa 2: Solicitar el código al usuario
+    const userCode = prompt(`Introduce el código de 6 dígitos enviado a ${email}:`);
+    
+    if (!userCode) {
+      errorDiv.textContent = 'Login cancelado';
+      return;
+    }
+    
+    // Etapa 3: Verificar el OTP
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email,
+      token: userCode.trim(),
+      type: 'email'
+    });
+    
+    if (error) {
+      console.error('Error verificando OTP:', error);
+      
+      if (error.message.includes('token has expired')) {
+        errorDiv.textContent = 'El código ha expirado. Solicita uno nuevo.';
+      } else if (error.message.includes('invalid')) {
+        errorDiv.textContent = 'Código incorrecto. Intenta de nuevo.';
+      } else {
+        errorDiv.textContent = 'Error verificando código: ' + error.message;
+      }
+      return;
+    }
+    
+    // ¡Login exitoso!
+    console.log('Login OTP exitoso:', data);
+    
+    // Verificar sesión activa
     const haySesionActiva = await verificarSesionActiva();
     if (haySesionActiva) {
       const { data: currentSession } = await supabase.auth.getSession();
       if (currentSession.session?.user?.email === email) {
         // Es la misma sesión, continuar
-        sesionActiva = true;
-        mostrarPanelAdmin();
-        return;
       } else {
-        errorDiv.textContent = 'Ya hay una sesión de administrador activa. Cierre la otra sesión primero.';
+        errorDiv.textContent = 'Ya hay una sesión activa en otro dispositivo.';
+        await supabase.auth.signOut();
         return;
       }
-    }
-    
-    // Intentar login con Supabase Auth
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password
-    });
-    
-    if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        errorDiv.textContent = 'Credenciales incorrectas';
-      } else {
-        errorDiv.textContent = error.message;
-      }
-      return;
-    }
-    
-    // Verificar que sea el admin único
-    if (data.user.email !== ADMIN_EMAIL) {
-      await supabase.auth.signOut();
-      errorDiv.textContent = 'No tiene permisos de administrador';
-      return;
     }
     
     // Registrar sesión activa
     await actualizarSesionActiva(data.user.id, true);
     
-    // Guardar sesión
+    // Configurar variables de sesión
     adminSession = data.session;
     sesionActiva = true;
     
-    // Mostrar panel admin
+    // Mostrar panel de administración
     document.getElementById('admin-email-display').textContent = data.user.email;
-    await mostrarPanelAdmin();
+    await mostrarPanelAdminOTP();
     
-    // Iniciar detector de actividad
+    // Iniciar detector de inactividad
     iniciarDetectorActividad();
     resetInactivityTimer();
     
   } catch (error) {
-    console.error('Error login:', error);
-    errorDiv.textContent = 'Error al iniciar sesión';
+    console.error('Error inesperado en login OTP:', error);
+    errorDiv.textContent = 'Error inesperado al iniciar sesión';
   }
+}
+
+// Función para mostrar panel admin con OTP
+async function mostrarPanelAdminOTP() {
+  document.getElementById('admin-login').classList.add('oculto');
+  document.getElementById('admin-panel').classList.remove('oculto');
+  
+  // Mostrar estado de autenticación OTP
+  const authStatus = document.createElement('div');
+  authStatus.style.margin = '10px 0';
+  authStatus.style.padding = '10px';
+  authStatus.style.borderRadius = '5px';
+  authStatus.style.fontSize = '14px';
+  authStatus.style.background = '#d4edda';
+  authStatus.style.color = '#155724';
+  authStatus.innerHTML = '✅ <strong>Autenticado con OTP por email</strong> - Seguridad activada';
+  
+  const panel = document.getElementById('admin-panel');
+  const firstElement = panel.querySelector('h2').nextElementSibling;
+  if (firstElement) {
+    panel.insertBefore(authStatus, firstElement.nextSibling);
+  }
+  
+  // Cargar datos del panel
+  await cargarPanelAdmin();
 }
 
 // Función para cerrar sesión
@@ -2252,28 +2315,14 @@ async function cerrarSesionAdmin() {
   }
 }
 
-// Función para mostrar panel admin
-async function mostrarPanelAdmin() {
-  // Ocultar login y mostrar panel
-  document.getElementById('admin-login').classList.add('oculto');
-  document.getElementById('admin-panel').classList.remove('oculto');
-  
-  // Cargar datos del panel
-  await cargarPanelAdmin();
-}
-
 // Entrar al panel admin
 async function entrarAdmin() {
-  // Verificar si ya está autenticado
   const { data: { session } } = await supabase.auth.getSession();
   
   if (session) {
-    // Verificar que sea el admin único
     if (session.user.email === ADMIN_EMAIL) {
-      // Verificar que no haya otra sesión activa
       const haySesionActiva = await verificarSesionActiva();
       if (haySesionActiva) {
-        // Verificar si es la misma sesión
         const { data: sesionData } = await supabase
           .from('sesiones_activas')
           .select('user_id')
@@ -2285,7 +2334,7 @@ async function entrarAdmin() {
           adminSession = session;
           sesionActiva = true;
           document.getElementById('admin-email-display').textContent = session.user.email;
-          await mostrarPanelAdmin();
+          await mostrarPanelAdminOTP();
           iniciarDetectorActividad();
           resetInactivityTimer();
           return;
@@ -2301,7 +2350,7 @@ async function entrarAdmin() {
         sesionActiva = true;
         await actualizarSesionActiva(session.user.id, true);
         document.getElementById('admin-email-display').textContent = session.user.email;
-        await mostrarPanelAdmin();
+        await mostrarPanelAdminOTP();
         iniciarDetectorActividad();
         resetInactivityTimer();
         return;
@@ -2373,6 +2422,21 @@ function iniciarDetectorActividad() {
   });
 }
 
+// Función auxiliar para probar OTP
+async function probarOTP() {
+  const { error } = await supabase.auth.signInWithOtp({
+    email: ADMIN_EMAIL,
+    options: { shouldCreateUser: false }
+  });
+  
+  if (error) {
+    console.error('Error prueba OTP:', error);
+    alert('Error: ' + error.message);
+  } else {
+    alert('✅ Código OTP enviado. Revisa tu correo.');
+  }
+}
+
 // Exportar funciones al scope global
 window.mostrarVentana = mostrarVentana;
 window.guardarDatosInscripcion = guardarDatosInscripcion;
@@ -2396,5 +2460,6 @@ window.ordenarPorCedula = ordenarPorCedula;
 window.ordenarPorReferencia = ordenarPorReferencia;
 window.activarCohetes = activarCohetes;
 window.mostrarSeccion = mostrarSeccion;
+window.probarOTP = probarOTP;
 
 console.log('✅ Todas las funciones han sido cargadas correctamente');
