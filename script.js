@@ -20,6 +20,10 @@ let sesionActiva = false;
 const SESSION_TIMEOUT = 30 * 60 * 1000;
 let inactivityTimer;
 
+// Timeout OTP (10 minutos)
+let otpTimeout = null;
+const OTP_TIMEOUT = 10 * 60 * 1000;
+
 const promociones = [
   { id: 1, activa: false, descripcion: '', cantidad: 0, precio: 0 },
   { id: 2, activa: false, descripcion: '', cantidad: 0, precio: 0 },
@@ -527,6 +531,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   
   // Mostrar términos
   document.getElementById('modal-terminos').classList.remove('oculto');
+  
+  // Agregar botones adicionales admin
+  agregarBotonesAdicionalesAdmin();
 });
 
 async function obtenerTotalCartones() {
@@ -2066,6 +2073,8 @@ async function borrarCartones() {
 // ==================== INICIALIZACIÓN ====================
 // Inicializar detector de actividad
 iniciarDetectorActividad();
+// ESTO ESTÁ VACÍO - DEBES CAMBIARLO:
+
 
 // ==================== SISTEMA DE AUTENTICACIÓN OTP CON SESIÓN ÚNICA ====================
 // Función para crear la tabla de sesiones activas
@@ -2165,16 +2174,17 @@ async function actualizarActividadSesion() {
   }
 }
 
-// ==================== FUNCIÓN LOGIN OTP CON SESIÓN ÚNICA ====================
+// ==================== LOGIN CON DOBLE FACTOR ====================
 async function loginAdmin() {
   const email = document.getElementById('admin-email').value.trim();
+  const password = document.getElementById('admin-password').value;
   const errorDiv = document.getElementById('admin-error');
   
   errorDiv.textContent = '';
   errorDiv.className = '';
   
-  if (!email) {
-    errorDiv.textContent = 'Por favor ingresa tu correo electrónico';
+  if (!email || !password) {
+    errorDiv.textContent = 'Por favor ingresa email y contraseña';
     errorDiv.className = 'error';
     return;
   }
@@ -2186,53 +2196,79 @@ async function loginAdmin() {
     return;
   }
   
-  // 1. VERIFICAR SI YA HAY SESIÓN ACTIVA
-  const estadoSesion = await verificarSesionActiva(email);
-  
-  if (estadoSesion === 'ocupado_por_otro') {
-    // Obtener información de la sesión activa
-    const { data: sesionInfo } = await supabase
-      .from('sesiones_activas')
-      .select('login_timestamp, user_email')
-      .eq('tipo', 'admin')
-      .single();
-    
-    let mensaje = '⚠️ **PANEL ADMIN OCUPADO**\n\n';
-    mensaje += 'Ya hay una sesión de administrador activa. ';
-    
-    if (sesionInfo?.login_timestamp) {
-      const horaLogin = new Date(sesionInfo.login_timestamp);
-      mensaje += `\n\nLa sesión se inició el: ${horaLogin.toLocaleDateString()} a las ${horaLogin.toLocaleTimeString()}`;
-    }
-    
-    mensaje += '\n\nDebes esperar a que cierre sesión o esperar 30 minutos de inactividad.';
-    
-    errorDiv.innerHTML = mensaje;
-    errorDiv.className = 'error';
-    errorDiv.style.backgroundColor = '#fff3cd';
-    errorDiv.style.border = '1px solid #ffeaa7';
-    errorDiv.style.padding = '15px';
-    errorDiv.style.borderRadius = '5px';
-    
-    // Deshabilitar el botón de login temporalmente
-    const loginBtn = document.querySelector('#admin-login button[onclick="loginAdmin()"]');
-    if (loginBtn) {
-      loginBtn.disabled = true;
-      loginBtn.textContent = 'SESION OCUPADA';
-      setTimeout(() => {
-        loginBtn.disabled = false;
-        loginBtn.textContent = 'Iniciar Sesión';
-      }, 30000); // Rehabilitar después de 30 segundos
-    }
-    
-    return;
-  }
-  
-  // 2. SI NO HAY SESIÓN ACTIVA O ES LA MISMA, PROCEDER CON OTP
+  // ==================== PASO 1: VERIFICAR CONTRASEÑA ====================
   try {
-    // Etapa 1: Solicitar OTP por email
-    errorDiv.textContent = 'Enviando código de verificación...';
+    errorDiv.textContent = '🔐 Verificando contraseña...';
     errorDiv.className = 'info';
+    
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+    
+    if (authError) {
+      console.error('Error de autenticación:', authError);
+      
+      if (authError.message.includes('Invalid login credentials')) {
+        errorDiv.textContent = '❌ Contraseña incorrecta';
+      } else if (authError.message.includes('Email not confirmed')) {
+        errorDiv.textContent = '❌ Email no confirmado. Revisa tu correo.';
+      } else if (authError.message.includes('rate limit')) {
+        errorDiv.textContent = '⚠️ Demasiados intentos. Espera unos minutos.';
+      } else {
+        errorDiv.textContent = 'Error: ' + authError.message;
+      }
+      
+      errorDiv.className = 'error';
+      
+      // Limpiar campo de contraseña
+      document.getElementById('admin-password').value = '';
+      document.getElementById('admin-password').focus();
+      
+      return;
+    }
+    
+    console.log('✅ Contraseña CORRECTA');
+    
+    // ==================== PASO 2: VERIFICAR SESIÓN ACTIVA ====================
+    errorDiv.textContent = '🔍 Verificando sesiones activas...';
+    
+    const estadoSesion = await verificarSesionActiva(email);
+    
+    if (estadoSesion === 'ocupado_por_otro') {
+      // Obtener información de la sesión activa
+      const { data: sesionInfo } = await supabase
+        .from('sesiones_activas')
+        .select('login_timestamp, user_email')
+        .eq('tipo', 'admin')
+        .single();
+      
+      let mensaje = '⚠️ **PANEL ADMIN OCUPADO**\n\n';
+      mensaje += 'Ya hay una sesión de administrador activa. ';
+      
+      if (sesionInfo?.login_timestamp) {
+        const horaLogin = new Date(sesionInfo.login_timestamp);
+        mensaje += `\n\nLa sesión se inició el: ${horaLogin.toLocaleDateString()} a las ${horaLogin.toLocaleTimeString()}`;
+      }
+      
+      mensaje += '\n\nDebes esperar a que cierre sesión o esperar 30 minutos de inactividad.';
+      
+      // Cerrar la sesión temporal de contraseña
+      await supabase.auth.signOut();
+      limpiarStorageTemporal();
+      
+      errorDiv.innerHTML = mensaje;
+      errorDiv.className = 'error';
+      errorDiv.style.backgroundColor = '#fff3cd';
+      errorDiv.style.border = '1px solid #ffeaa7';
+      errorDiv.style.padding = '15px';
+      errorDiv.style.borderRadius = '5px';
+      
+      return;
+    }
+    
+    // ==================== PASO 3: ENVIAR OTP (segundo factor) ====================
+    errorDiv.textContent = '📧 Enviando código de verificación...';
     
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email: email,
@@ -2243,6 +2279,10 @@ async function loginAdmin() {
     
     if (otpError) {
       console.error('Error enviando OTP:', otpError);
+      
+      // Cerrar sesión temporal
+      await supabase.auth.signOut();
+      limpiarStorageTemporal();
       
       if (otpError.message.includes('rate limit')) {
         errorDiv.textContent = 'Demasiados intentos. Espera unos minutos.';
@@ -2255,61 +2295,48 @@ async function loginAdmin() {
       return;
     }
     
-    // Mostrar mensaje de éxito
-    errorDiv.innerHTML = '✅ <strong>Código enviado!</strong> Revisa tu correo y introduce el código de 6 dígitos.';
+    // ==================== PASO 4: MOSTRAR INTERFAZ PARA OTP ====================
+    errorDiv.innerHTML = '✅ <strong>Contraseña correcta!</strong><br>📧 <strong>Código enviado!</strong> Revisa tu correo.';
     errorDiv.className = 'success';
     
-    // Mostrar campo para ingresar código
+    // Guardar email y sesión temporal para usar después
+    sessionStorage.setItem('admin_email_temp', email);
+    sessionStorage.setItem('admin_auth_temp', JSON.stringify(authData));
+    
+    // Mostrar campo para ingresar OTP
     mostrarCampoOTP();
     
   } catch (error) {
-    console.error('Error inesperado en login OTP:', error);
+    console.error('Error inesperado en login:', error);
     errorDiv.textContent = 'Error inesperado al iniciar sesión';
     errorDiv.className = 'error';
+    
+    // Limpiar todo en caso de error
+    await supabase.auth.signOut().catch(() => {});
+    limpiarStorageTemporal();
   }
 }
 
-// Función para mostrar campo de entrada de OTP
-function mostrarCampoOTP() {
-  const loginForm = document.getElementById('admin-login');
-  const otpHTML = `
-    <div id="otp-container" style="margin-top: 20px;">
-      <div class="form-group">
-        <label for="otp-code">Código de 6 dígitos:</label>
-        <input type="text" id="otp-code" maxlength="6" placeholder="123456" 
-               style="letter-spacing: 10px; text-align: center; font-size: 24px; width: 200px;">
-        <small>Ingresa el código enviado a tu email</small>
-      </div>
-      <div style="margin-top: 15px;">
-        <button onclick="verificarOTP()" class="btn-primary">Verificar Código</button>
-        <button onclick="cancelarOTP()" class="btn-secondary" style="margin-left: 10px;">Cancelar</button>
-      </div>
-    </div>
-  `;
-  
-  // Si ya existe el contenedor OTP, reemplazarlo
-  const existingOtp = document.getElementById('otp-container');
-  if (existingOtp) {
-    existingOtp.outerHTML = otpHTML;
-  } else {
-    loginForm.insertAdjacentHTML('beforeend', otpHTML);
-  }
-  
-  document.getElementById('otp-code').focus();
-}
-
-// Función para verificar el código OTP ingresado
+// ==================== FUNCIÓN PARA VERIFICAR OTP ====================
 async function verificarOTP() {
-  const email = document.getElementById('admin-email').value.trim();
+  const email = sessionStorage.getItem('admin_email_temp');
   const otpCode = document.getElementById('otp-code').value.trim();
   const errorDiv = document.getElementById('admin-error');
   
   errorDiv.textContent = '';
   errorDiv.className = '';
   
+  if (!email) {
+    errorDiv.textContent = '❌ Error: Sesión expirada. Vuelve a intentar.';
+    errorDiv.className = 'error';
+    cancelarOTP();
+    return;
+  }
+  
   if (!otpCode || otpCode.length !== 6) {
     errorDiv.textContent = 'Ingresa un código de 6 dígitos válido';
     errorDiv.className = 'error';
+    document.getElementById('otp-code').focus();
     return;
   }
   
@@ -2323,9 +2350,10 @@ async function verificarOTP() {
   }
   
   try {
-    errorDiv.textContent = 'Verificando código...';
+    errorDiv.textContent = '🔐 Verificando código...';
     errorDiv.className = 'info';
     
+    // Verificar OTP
     const { data, error } = await supabase.auth.verifyOtp({
       email: email,
       token: otpCode.trim(),
@@ -2343,13 +2371,19 @@ async function verificarOTP() {
         errorDiv.textContent = 'Error verificando código: ' + error.message;
       }
       errorDiv.className = 'error';
+      
+      // Dar otra oportunidad
+      document.getElementById('otp-code').value = '';
+      document.getElementById('otp-code').focus();
       return;
     }
     
-    // ¡Login exitoso!
-    console.log('Login OTP exitoso:', data);
+    console.log('✅ OTP CORRECTO - Login completo exitoso');
     
-    // REGISTRAR SESIÓN ACTIVA CON TOKEN ÚNICO
+    // Limpiar timeout de OTP
+    clearTimeout(otpTimeout);
+    
+    // ==================== REGISTRAR SESIÓN ACTIVA ====================
     const sessionToken = generateSessionToken();
     await actualizarSesionActiva(
       data.user.id, 
@@ -2358,21 +2392,206 @@ async function verificarOTP() {
       sessionToken
     );
     
-    // Configurar variables de sesión
+    // ==================== CONFIGURAR SESIÓN COMPLETA ====================
     adminSession = data.session;
     sesionActiva = true;
     
-    // Mostrar panel de administración
+    // ==================== LIMPIAR TEMPORALES ====================
+    sessionStorage.removeItem('admin_email_temp');
+    sessionStorage.removeItem('admin_auth_temp');
+    
+    // ==================== MOSTRAR PANEL ADMIN ====================
     document.getElementById('admin-email-display').textContent = data.user.email;
     await mostrarPanelAdminOTP(sessionToken);
     
-    // Iniciar detector de inactividad
+    // ==================== INICIAR DETECTOR DE INACTIVIDAD ====================
     iniciarDetectorActividad();
     resetInactivityTimer();
     
   } catch (error) {
     console.error('Error inesperado verificando OTP:', error);
-    errorDiv.textContent = 'Error inesperado al verificar código';
+    
+    // Limpiar timeout
+    clearTimeout(otpTimeout);
+    
+    // Determinar tipo de error
+    if (error.message?.includes('network') || error.message?.includes('fetch')) {
+      errorDiv.textContent = '🌐 Error de conexión. Verifica tu internet.';
+    } else {
+      errorDiv.textContent = '❌ Error inesperado al verificar código';
+    }
+    
+    errorDiv.className = 'error';
+    
+    // Limpiar en caso de error
+    sessionStorage.removeItem('admin_email_temp');
+    sessionStorage.removeItem('admin_auth_temp');
+    
+    // Auto-cancelar después de 3 segundos
+    setTimeout(() => {
+      if (!sesionActiva) {
+        cancelarOTP();
+      }
+    }, 3000);
+  }
+}
+
+// Limpiar storage temporal
+function limpiarStorageTemporal() {
+  sessionStorage.removeItem('admin_email_temp');
+  sessionStorage.removeItem('admin_auth_temp');
+  
+  // Limpiar timeout OTP
+  clearTimeout(otpTimeout);
+  
+  // Limpiar tokens temporales de Supabase
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.includes('sb-')) {
+      keysToRemove.push(key);
+    }
+  }
+  
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+}
+
+// Mostrar campo OTP (modificado)
+function mostrarCampoOTP() {
+  const loginForm = document.getElementById('admin-login');
+  const email = sessionStorage.getItem('admin_email_temp') || '';
+  
+  const otpHTML = `
+    <div id="otp-container" style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 20px;">
+      <div style="background: #e8f4fd; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+        <strong>✅ Contraseña verificada</strong><br>
+        <small>Se envió un código a: ${email}</small>
+      </div>
+      
+      <div class="form-group">
+        <label for="otp-code">Código de 6 dígitos:</label>
+        <input type="text" id="otp-code" maxlength="6" placeholder="123456" 
+               style="letter-spacing: 10px; text-align: center; font-size: 24px; width: 200px;"
+               oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6)">
+        <small>Ingresa el código enviado a tu email</small>
+      </div>
+      
+      <div style="margin-top: 15px;">
+        <button onclick="verificarOTP()" class="btn-primary" style="padding: 10px 20px;">
+          ✅ Verificar Código
+        </button>
+        <button onclick="reenviarOTP()" class="btn-secondary" style="margin-left: 10px; padding: 10px 20px;">
+          🔄 Reenviar código
+        </button>
+        <button onclick="cancelarOTP()" class="btn-secondary" style="margin-left: 10px; padding: 10px 20px;">
+          ↩️ Volver a intentar
+        </button>
+      </div>
+      
+      <div style="margin-top: 10px; font-size: 12px; color: #666;">
+        <small>⚠️ El código expira en 10 minutos</small>
+      </div>
+    </div>
+  `;
+  
+  // Si ya existe el contenedor OTP, reemplazarlo
+  const existingOtp = document.getElementById('otp-container');
+  if (existingOtp) {
+    existingOtp.outerHTML = otpHTML;
+  } else {
+    loginForm.insertAdjacentHTML('beforeend', otpHTML);
+  }
+  
+  // Ocultar campos de contraseña
+  document.getElementById('admin-password').parentElement.style.display = 'none';
+  document.querySelector('button[onclick="loginAdmin()"]').style.display = 'none';
+  
+  // Configurar timeout automático para OTP
+  clearTimeout(otpTimeout);
+  otpTimeout = setTimeout(() => {
+    if (document.getElementById('otp-container') && !sesionActiva) {
+      const errorDiv = document.getElementById('admin-error');
+      errorDiv.innerHTML = '⏰ <strong>Código expirado</strong><br>El código OTP ha expirado. Vuelve a intentar.';
+      errorDiv.className = 'error';
+      cancelarOTP();
+    }
+  }, OTP_TIMEOUT);
+  
+  document.getElementById('otp-code').focus();
+}
+
+// Cancelar OTP (modificado)
+function cancelarOTP() {
+  // Limpiar timeout
+  clearTimeout(otpTimeout);
+  
+  // Limpiar todo
+  sessionStorage.removeItem('admin_email_temp');
+  sessionStorage.removeItem('admin_auth_temp');
+  
+  // Cerrar cualquier sesión temporal
+  supabase.auth.signOut().catch(() => {});
+  limpiarStorageTemporal();
+  
+  // Remover campo OTP
+  const otpContainer = document.getElementById('otp-container');
+  if (otpContainer) otpContainer.remove();
+  
+  // Restaurar campos de contraseña
+  document.getElementById('admin-password').parentElement.style.display = 'block';
+  document.querySelector('button[onclick="loginAdmin()"]').style.display = 'block';
+  
+  // Limpiar campos
+  document.getElementById('admin-password').value = '';
+  document.getElementById('admin-error').textContent = '';
+  
+  // Enfocar en contraseña
+  document.getElementById('admin-password').focus();
+}
+
+// Función para reenviar OTP
+async function reenviarOTP() {
+  const email = sessionStorage.getItem('admin_email_temp');
+  const errorDiv = document.getElementById('admin-error');
+  
+  if (!email) {
+    errorDiv.textContent = '❌ Error: Email no encontrado';
+    errorDiv.className = 'error';
+    return;
+  }
+  
+  try {
+    errorDiv.textContent = '🔄 Reenviando código...';
+    errorDiv.className = 'info';
+    
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: { shouldCreateUser: false }
+    });
+    
+    if (error) {
+      errorDiv.textContent = 'Error reenviando código: ' + error.message;
+      errorDiv.className = 'error';
+      return;
+    }
+    
+    // Reiniciar timeout
+    clearTimeout(otpTimeout);
+    otpTimeout = setTimeout(() => {
+      if (document.getElementById('otp-container') && !sesionActiva) {
+        const errorDiv = document.getElementById('admin-error');
+        errorDiv.innerHTML = '⏰ <strong>Código expirado</strong><br>El código OTP ha expirado. Vuelve a intentar.';
+        errorDiv.className = 'error';
+        cancelarOTP();
+      }
+    }, OTP_TIMEOUT);
+    
+    errorDiv.innerHTML = '✅ <strong>Código reenviado!</strong> Revisa tu correo.';
+    errorDiv.className = 'success';
+    
+  } catch (error) {
+    console.error('Error reenviando OTP:', error);
+    errorDiv.textContent = 'Error reenviando código';
     errorDiv.className = 'error';
   }
 }
@@ -2426,12 +2645,98 @@ async function mostrarPanelAdminOTP(sessionToken) {
   await cargarPanelAdmin();
 }
 
-// Cancelar proceso OTP
-function cancelarOTP() {
-  const otpContainer = document.getElementById('otp-container');
-  if (otpContainer) {
-    otpContainer.remove();
+// ==================== FUNCIÓN PARA FORZAR CIERRE DE SESIÓN ====================
+async function forzarCerrarSesionRemota() {
+  if (!confirm('⚠️ ¿Forzar cierre de todas las sesiones?\n\nEsto cerrará la sesión en todos los dispositivos.')) {
+    return;
   }
+  
+  try {
+    // 1. Limpiar sesión activa en la base de datos
+    await supabase
+      .from('sesiones_activas')
+      .update({ 
+        activa: false,
+        session_token: null,
+        ultima_actividad: new Date().toISOString()
+      })
+      .eq('tipo', 'admin');
+    
+    // 2. Cerrar sesión en Supabase Auth
+    await supabase.auth.signOut();
+    
+    alert('✅ Sesiones remotas cerradas. Ahora puedes iniciar sesión.');
+    
+    // 3. Recargar para limpiar estado
+    location.reload();
+    
+  } catch (error) {
+    console.error('Error forzando cierre:', error);
+    alert('❌ Error al forzar cierre de sesión');
+  }
+}
+
+// ==================== FUNCIÓN PARA RECUPERAR PASSWORD ====================
+async function recuperarPasswordAdmin() {
+  const email = ADMIN_EMAIL;
+  
+  if (!confirm(`¿Enviar enlace de recuperación a ${email}?`)) {
+    return;
+  }
+  
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password.html`,
+    });
+    
+    if (error) throw error;
+    
+    alert('✅ Enlace de recuperación enviado a tu email');
+    
+  } catch (error) {
+    console.error('Error recuperando password:', error);
+    alert('❌ Error enviando enlace de recuperación');
+  }
+}
+
+// ==================== MODIFICAR entrarAdmin() PARA NUEVO FLUJO ====================
+async function entrarAdmin() {
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (session?.user?.email === ADMIN_EMAIL) {
+    // Verificar si ya tiene sesión 2FA activa
+    const estadoSesion = await verificarSesionActiva();
+    
+    if (estadoSesion === true) {
+      // Ya tiene sesión 2FA completa
+      const { data: sesionData } = await supabase
+        .from('sesiones_activas')
+        .select('user_email, session_token')
+        .eq('tipo', 'admin')
+        .single();
+      
+      if (sesionData?.user_email === ADMIN_EMAIL) {
+        // Sesión válida, mostrar panel
+        adminSession = session;
+        sesionActiva = true;
+        document.getElementById('admin-email-display').textContent = ADMIN_EMAIL;
+        await mostrarPanelAdminOTP(sesionData.session_token);
+        iniciarDetectorActividad();
+        resetInactivityTimer();
+        return;
+      }
+    }
+    
+    // Tiene sesión de password pero no completó 2FA
+    // O la sesión 2FA expiró
+    await supabase.auth.signOut();
+  }
+  
+  // Mostrar formulario de login 2FA
+  mostrarVentana('admin-login');
+  
+  // Resetear formulario
+  cancelarOTP(); // Esto limpiará todo
   document.getElementById('admin-error').textContent = '';
 }
 
@@ -2449,11 +2754,15 @@ async function cerrarSesionAdmin() {
     adminSession = null;
     sesionActiva = false;
     clearTimeout(inactivityTimer);
+    clearTimeout(otpTimeout);
     
     // Limpiar formulario
     document.getElementById('admin-email').value = '';
     document.getElementById('admin-password').value = '';
     document.getElementById('admin-error').textContent = '';
+    
+    // Limpiar storage temporal
+    limpiarStorageTemporal();
     
     // Volver a login
     mostrarVentana('admin-login');
@@ -2461,56 +2770,6 @@ async function cerrarSesionAdmin() {
   } catch (error) {
     console.error('Error en cerrarSesionAdmin:', error);
   }
-}
-// Entrar al panel admin
-async function entrarAdmin() {
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  if (session) {
-    if (session.user.email === ADMIN_EMAIL) {
-      const haySesionActiva = await verificarSesionActiva();
-      if (haySesionActiva) {
-        const { data: sesionData } = await supabase
-          .from('sesiones_activas')
-          .select('user_id')
-          .eq('tipo', 'admin')
-          .single();
-          
-        if (sesionData?.user_id === session.user.id) {
-          // Es la misma sesión, mostrar panel
-          adminSession = session;
-          sesionActiva = true;
-          document.getElementById('admin-email-display').textContent = session.user.email;
-          await mostrarPanelAdminOTP(sesionData.session_token || 'session_activa');
-          iniciarDetectorActividad();
-          resetInactivityTimer();
-          return;
-        } else {
-          // Otra sesión está activa
-          alert('Ya hay una sesión de administrador activa en otro dispositivo/navegador. Debes esperar a que cierre sesión.');
-          mostrarVentana('admin-login');
-          return;
-        }
-      } else {
-        // No hay sesión activa, iniciar nueva
-        adminSession = session;
-        sesionActiva = true;
-        const sessionToken = generateSessionToken();
-        await actualizarSesionActiva(session.user.id, true, session.user.email, sessionToken);
-        document.getElementById('admin-email-display').textContent = session.user.email;
-        await mostrarPanelAdminOTP(sessionToken);
-        iniciarDetectorActividad();
-        resetInactivityTimer();
-        return;
-      }
-    } else {
-      // No es el admin, cerrar sesión
-      await cerrarSesionAdmin();
-    }
-  }
-  
-  // Mostrar formulario de login
-  mostrarVentana('admin-login');
 }
 
 // Verificar sesión al cargar la página
@@ -2546,15 +2805,18 @@ async function verificarSesionInicial() {
 }
 
 // Timer de inactividad
+
 function resetInactivityTimer() {
   clearTimeout(inactivityTimer);
   if (sesionActiva) {
+    console.log('⏰ Reiniciando timer de inactividad (30 minutos)');
     inactivityTimer = setTimeout(async () => {
       if (sesionActiva) {
-        alert('Sesión expirada por inactividad');
+        console.log('⏰ Sesión expirada por inactividad');
+        alert('Sesión expirada por inactividad (30 minutos)');
         await cerrarSesionAdmin();
       }
-    }, SESSION_TIMEOUT);
+    }, SESSION_TIMEOUT); // 30 minutos
   }
 }
 
@@ -2582,6 +2844,23 @@ async function probarOTP() {
     alert('Error: ' + error.message);
   } else {
     alert('✅ Código OTP enviado. Revisa tu correo.');
+  }
+}
+
+// ==================== AGREGAR BOTONES ADICIONALES EN EL HTML ====================
+function agregarBotonesAdicionalesAdmin() {
+  const loginSection = document.getElementById('admin-login');
+  if (!loginSection) return;
+  
+  // Verificar si ya existen los botones
+  if (!document.getElementById('botones-adicionales-admin')) {
+    const botonesHTML = `
+      <div id="botones-adicionales-admin" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
+        
+      </div>
+    `;
+    
+    loginSection.insertAdjacentHTML('beforeend', botonesHTML);
   }
 }
 
@@ -2656,5 +2935,8 @@ window.mostrarSeccion = mostrarSeccion;
 window.probarOTP = probarOTP;
 window.verificarOTP = verificarOTP;
 window.cancelarOTP = cancelarOTP;
+window.reenviarOTP = reenviarOTP;
+window.forzarCerrarSesionRemota = forzarCerrarSesionRemota;
+window.recuperarPasswordAdmin = recuperarPasswordAdmin;
 
 console.log('✅ Todas las funciones han sido cargadas correctamente');
