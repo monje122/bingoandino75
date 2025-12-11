@@ -2067,7 +2067,7 @@ async function borrarCartones() {
 // Inicializar detector de actividad
 iniciarDetectorActividad();
 
-// ==================== SISTEMA DE AUTENTICACIÓN OTP ====================
+// ==================== SISTEMA DE AUTENTICACIÓN OTP CON SESIÓN ÚNICA ====================
 // Función para crear la tabla de sesiones activas
 async function crearTablaSesiones() {
   const { error } = await supabase
@@ -2076,8 +2076,11 @@ async function crearTablaSesiones() {
       {
         tipo: 'admin',
         user_id: null,
+        user_email: null,
+        session_token: null,
         activa: false,
-        ultima_actividad: new Date().toISOString()
+        ultima_actividad: new Date().toISOString(),
+        login_timestamp: null
       }
     ], { onConflict: 'tipo' });
     
@@ -2086,8 +2089,8 @@ async function crearTablaSesiones() {
   }
 }
 
-// Función para verificar sesión activa
-async function verificarSesionActiva() {
+// Función para verificar sesión activa (REVISADA para sesión única)
+async function verificarSesionActiva(userEmail = null) {
   try {
     const { data: sesionData, error } = await supabase
       .from('sesiones_activas')
@@ -2105,13 +2108,20 @@ async function verificarSesionActiva() {
     }
     
     if (sesionData && sesionData.activa) {
+      // Verificar que la sesión no haya expirado
       const ultimaActividad = new Date(sesionData.ultima_actividad);
       const ahora = new Date();
       const minutosDesdeUltimaActividad = (ahora - ultimaActividad) / (1000 * 60);
       
+      // Si pasaron más de 30 minutos, considerar expirada
       if (minutosDesdeUltimaActividad > 30) {
-        await actualizarSesionActiva(null, false);
+        await actualizarSesionActiva(null, false, null, null);
         return false;
+      }
+      
+      // Si se proporciona email, verificar si es el mismo usuario
+      if (userEmail && sesionData.user_email !== userEmail) {
+        return 'ocupado_por_otro'; // Sesión ocupada por otro usuario
       }
       
       return true;
@@ -2123,16 +2133,19 @@ async function verificarSesionActiva() {
   }
 }
 
-// Función para actualizar sesión activa
-async function actualizarSesionActiva(userId, activa) {
+// Función para actualizar sesión activa (REVISADA)
+async function actualizarSesionActiva(userId, activa, userEmail = null, sessionToken = null) {
   try {
     const { error } = await supabase
       .from('sesiones_activas')
       .upsert({
         tipo: 'admin',
         user_id: userId,
+        user_email: userEmail,
+        session_token: sessionToken,
         activa: activa,
-        ultima_actividad: new Date().toISOString()
+        ultima_actividad: new Date().toISOString(),
+        login_timestamp: activa ? new Date().toISOString() : null
       }, { onConflict: 'tipo' });
       
     return !error;
@@ -2152,30 +2165,78 @@ async function actualizarActividadSesion() {
   }
 }
 
-// ==================== FUNCIÓN LOGIN OTP ====================
+// ==================== FUNCIÓN LOGIN OTP CON SESIÓN ÚNICA ====================
 async function loginAdmin() {
   const email = document.getElementById('admin-email').value.trim();
   const errorDiv = document.getElementById('admin-error');
   
   errorDiv.textContent = '';
+  errorDiv.className = '';
   
   if (!email) {
     errorDiv.textContent = 'Por favor ingresa tu correo electrónico';
+    errorDiv.className = 'error';
     return;
   }
   
   // Verificar que sea el email del administrador
   if (email !== ADMIN_EMAIL) {
     errorDiv.textContent = 'No tiene permisos de administrador';
+    errorDiv.className = 'error';
     return;
   }
   
+  // 1. VERIFICAR SI YA HAY SESIÓN ACTIVA
+  const estadoSesion = await verificarSesionActiva(email);
+  
+  if (estadoSesion === 'ocupado_por_otro') {
+    // Obtener información de la sesión activa
+    const { data: sesionInfo } = await supabase
+      .from('sesiones_activas')
+      .select('login_timestamp, user_email')
+      .eq('tipo', 'admin')
+      .single();
+    
+    let mensaje = '⚠️ **PANEL ADMIN OCUPADO**\n\n';
+    mensaje += 'Ya hay una sesión de administrador activa. ';
+    
+    if (sesionInfo?.login_timestamp) {
+      const horaLogin = new Date(sesionInfo.login_timestamp);
+      mensaje += `\n\nLa sesión se inició el: ${horaLogin.toLocaleDateString()} a las ${horaLogin.toLocaleTimeString()}`;
+    }
+    
+    mensaje += '\n\nDebes esperar a que cierre sesión o esperar 30 minutos de inactividad.';
+    
+    errorDiv.innerHTML = mensaje;
+    errorDiv.className = 'error';
+    errorDiv.style.backgroundColor = '#fff3cd';
+    errorDiv.style.border = '1px solid #ffeaa7';
+    errorDiv.style.padding = '15px';
+    errorDiv.style.borderRadius = '5px';
+    
+    // Deshabilitar el botón de login temporalmente
+    const loginBtn = document.querySelector('#admin-login button[onclick="loginAdmin()"]');
+    if (loginBtn) {
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'SESION OCUPADA';
+      setTimeout(() => {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Iniciar Sesión';
+      }, 30000); // Rehabilitar después de 30 segundos
+    }
+    
+    return;
+  }
+  
+  // 2. SI NO HAY SESIÓN ACTIVA O ES LA MISMA, PROCEDER CON OTP
   try {
     // Etapa 1: Solicitar OTP por email
+    errorDiv.textContent = 'Enviando código de verificación...';
+    errorDiv.className = 'info';
+    
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email: email,
       options: {
-        // NO crear usuario nuevo si no existe
         shouldCreateUser: false,
       }
     });
@@ -2190,25 +2251,84 @@ async function loginAdmin() {
       } else {
         errorDiv.textContent = 'Error enviando el código: ' + otpError.message;
       }
+      errorDiv.className = 'error';
       return;
     }
     
     // Mostrar mensaje de éxito
     errorDiv.innerHTML = '✅ <strong>Código enviado!</strong> Revisa tu correo y introduce el código de 6 dígitos.';
-    errorDiv.style.color = 'green';
+    errorDiv.className = 'success';
     
-    // Etapa 2: Solicitar el código al usuario
-    const userCode = prompt(`Introduce el código de 6 dígitos enviado a ${email}:`);
+    // Mostrar campo para ingresar código
+    mostrarCampoOTP();
     
-    if (!userCode) {
-      errorDiv.textContent = 'Login cancelado';
-      return;
-    }
+  } catch (error) {
+    console.error('Error inesperado en login OTP:', error);
+    errorDiv.textContent = 'Error inesperado al iniciar sesión';
+    errorDiv.className = 'error';
+  }
+}
+
+// Función para mostrar campo de entrada de OTP
+function mostrarCampoOTP() {
+  const loginForm = document.getElementById('admin-login');
+  const otpHTML = `
+    <div id="otp-container" style="margin-top: 20px;">
+      <div class="form-group">
+        <label for="otp-code">Código de 6 dígitos:</label>
+        <input type="text" id="otp-code" maxlength="6" placeholder="123456" 
+               style="letter-spacing: 10px; text-align: center; font-size: 24px; width: 200px;">
+        <small>Ingresa el código enviado a tu email</small>
+      </div>
+      <div style="margin-top: 15px;">
+        <button onclick="verificarOTP()" class="btn-primary">Verificar Código</button>
+        <button onclick="cancelarOTP()" class="btn-secondary" style="margin-left: 10px;">Cancelar</button>
+      </div>
+    </div>
+  `;
+  
+  // Si ya existe el contenedor OTP, reemplazarlo
+  const existingOtp = document.getElementById('otp-container');
+  if (existingOtp) {
+    existingOtp.outerHTML = otpHTML;
+  } else {
+    loginForm.insertAdjacentHTML('beforeend', otpHTML);
+  }
+  
+  document.getElementById('otp-code').focus();
+}
+
+// Función para verificar el código OTP ingresado
+async function verificarOTP() {
+  const email = document.getElementById('admin-email').value.trim();
+  const otpCode = document.getElementById('otp-code').value.trim();
+  const errorDiv = document.getElementById('admin-error');
+  
+  errorDiv.textContent = '';
+  errorDiv.className = '';
+  
+  if (!otpCode || otpCode.length !== 6) {
+    errorDiv.textContent = 'Ingresa un código de 6 dígitos válido';
+    errorDiv.className = 'error';
+    return;
+  }
+  
+  // VERIFICAR NUEVAMENTE SI HAY SESIÓN ACTIVA (doble check)
+  const estadoSesion = await verificarSesionActiva(email);
+  if (estadoSesion === 'ocupado_por_otro') {
+    errorDiv.textContent = '❌ Ya hay una sesión activa. No puedes iniciar sesión hasta que se cierre.';
+    errorDiv.className = 'error';
+    cancelarOTP();
+    return;
+  }
+  
+  try {
+    errorDiv.textContent = 'Verificando código...';
+    errorDiv.className = 'info';
     
-    // Etapa 3: Verificar el OTP
     const { data, error } = await supabase.auth.verifyOtp({
       email: email,
-      token: userCode.trim(),
+      token: otpCode.trim(),
       type: 'email'
     });
     
@@ -2222,27 +2342,21 @@ async function loginAdmin() {
       } else {
         errorDiv.textContent = 'Error verificando código: ' + error.message;
       }
+      errorDiv.className = 'error';
       return;
     }
     
     // ¡Login exitoso!
     console.log('Login OTP exitoso:', data);
     
-    // Verificar sesión activa
-    const haySesionActiva = await verificarSesionActiva();
-    if (haySesionActiva) {
-      const { data: currentSession } = await supabase.auth.getSession();
-      if (currentSession.session?.user?.email === email) {
-        // Es la misma sesión, continuar
-      } else {
-        errorDiv.textContent = 'Ya hay una sesión activa en otro dispositivo.';
-        await supabase.auth.signOut();
-        return;
-      }
-    }
-    
-    // Registrar sesión activa
-    await actualizarSesionActiva(data.user.id, true);
+    // REGISTRAR SESIÓN ACTIVA CON TOKEN ÚNICO
+    const sessionToken = generateSessionToken();
+    await actualizarSesionActiva(
+      data.user.id, 
+      true, 
+      data.user.email,
+      sessionToken
+    );
     
     // Configurar variables de sesión
     adminSession = data.session;
@@ -2250,48 +2364,92 @@ async function loginAdmin() {
     
     // Mostrar panel de administración
     document.getElementById('admin-email-display').textContent = data.user.email;
-    await mostrarPanelAdminOTP();
+    await mostrarPanelAdminOTP(sessionToken);
     
     // Iniciar detector de inactividad
     iniciarDetectorActividad();
     resetInactivityTimer();
     
   } catch (error) {
-    console.error('Error inesperado en login OTP:', error);
-    errorDiv.textContent = 'Error inesperado al iniciar sesión';
+    console.error('Error inesperado verificando OTP:', error);
+    errorDiv.textContent = 'Error inesperado al verificar código';
+    errorDiv.className = 'error';
   }
 }
 
-// Función para mostrar panel admin con OTP
-async function mostrarPanelAdminOTP() {
+// Generar token único para sesión
+function generateSessionToken() {
+  return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Función para mostrar panel admin con OTP y token
+async function mostrarPanelAdminOTP(sessionToken) {
   document.getElementById('admin-login').classList.add('oculto');
   document.getElementById('admin-panel').classList.remove('oculto');
   
-  // Mostrar estado de autenticación OTP
-  const authStatus = document.createElement('div');
-  authStatus.style.margin = '10px 0';
-  authStatus.style.padding = '10px';
-  authStatus.style.borderRadius = '5px';
-  authStatus.style.fontSize = '14px';
-  authStatus.style.background = '#d4edda';
-  authStatus.style.color = '#155724';
-  authStatus.innerHTML = '✅ <strong>Autenticado con OTP por email</strong> - Seguridad activada';
+  // Mostrar estado de sesión única
+  const sessionInfo = document.createElement('div');
+  sessionInfo.id = 'session-info';
+  sessionInfo.style.margin = '10px 0';
+  sessionInfo.style.padding = '10px';
+  sessionInfo.style.borderRadius = '5px';
+  sessionInfo.style.fontSize = '14px';
+  sessionInfo.style.background = '#d4edda';
+  sessionInfo.style.color = '#155724';
+  sessionInfo.style.border = '1px solid #c3e6cb';
+  sessionInfo.innerHTML = `
+    ✅ <strong>SESIÓN ÚNICA ACTIVA</strong><br>
+    <small>Token: ${sessionToken?.substring(0, 20)}...</small><br>
+    <small>Solo tú puedes acceder hasta que cierres sesión.</small>
+  `;
   
   const panel = document.getElementById('admin-panel');
   const firstElement = panel.querySelector('h2').nextElementSibling;
   if (firstElement) {
-    panel.insertBefore(authStatus, firstElement.nextSibling);
+    panel.insertBefore(sessionInfo, firstElement.nextSibling);
+  }
+  
+  // Agregar botón de cerrar sesión prominente
+  const cerrarBtn = document.createElement('button');
+  cerrarBtn.textContent = '🔒 Cerrar Sesión (Liberar Panel)';
+  cerrarBtn.className = 'btn-danger';
+  cerrarBtn.style.margin = '10px 0';
+  cerrarBtn.style.padding = '10px 20px';
+  cerrarBtn.style.fontSize = '16px';
+  cerrarBtn.onclick = cerrarSesionAdmin;
+  
+  if (firstElement) {
+    panel.insertBefore(cerrarBtn, firstElement.nextSibling.nextSibling);
   }
   
   // Cargar datos del panel
   await cargarPanelAdmin();
 }
 
-// Función para cerrar sesión
+// Cancelar proceso OTP
+function cancelarOTP() {
+  const otpContainer = document.getElementById('otp-container');
+  if (otpContainer) {
+    otpContainer.remove();
+  }
+  document.getElementById('admin-error').textContent = '';
+}
+
+// Función para cerrar sesión (MEJORADA)
 async function cerrarSesionAdmin() {
   try {
-    // Limpiar sesión activa
-    await actualizarSesionActiva(null, false);
+    // Limpiar sesión activa completamente
+    await supabase
+      .from('sesiones_activas')
+      .update({
+        activa: false,
+        user_id: null,
+        user_email: null,
+        session_token: null,
+        login_timestamp: null,
+        ultima_actividad: new Date().toISOString()
+      })
+      .eq('tipo', 'admin');
     
     // Cerrar sesión en Supabase
     const { error } = await supabase.auth.signOut();
@@ -2302,16 +2460,25 @@ async function cerrarSesionAdmin() {
     sesionActiva = false;
     clearTimeout(inactivityTimer);
     
-    // Limpiar formulario
-    document.getElementById('admin-email').value = '';
-    document.getElementById('admin-password').value = '';
-    document.getElementById('admin-error').textContent = '';
+    // Mostrar mensaje de confirmación
+    alert('✅ Sesión cerrada correctamente. El panel admin está ahora disponible para otros usuarios.');
     
     // Volver a login
     mostrarVentana('admin-login');
     
+    // Limpiar formulario
+    document.getElementById('admin-email').value = '';
+    const errorDiv = document.getElementById('admin-error');
+    errorDiv.textContent = '';
+    errorDiv.className = '';
+    
+    // Remover campo OTP si existe
+    const otpContainer = document.getElementById('otp-container');
+    if (otpContainer) otpContainer.remove();
+    
   } catch (error) {
     console.error('Error en cerrarSesionAdmin:', error);
+    alert('Error al cerrar sesión');
   }
 }
 
@@ -2334,13 +2501,13 @@ async function entrarAdmin() {
           adminSession = session;
           sesionActiva = true;
           document.getElementById('admin-email-display').textContent = session.user.email;
-          await mostrarPanelAdminOTP();
+          await mostrarPanelAdminOTP(sesionData.session_token || 'session_activa');
           iniciarDetectorActividad();
           resetInactivityTimer();
           return;
         } else {
           // Otra sesión está activa
-          alert('Ya hay una sesión de administrador activa en otro dispositivo/navegador.');
+          alert('Ya hay una sesión de administrador activa en otro dispositivo/navegador. Debes esperar a que cierre sesión.');
           mostrarVentana('admin-login');
           return;
         }
@@ -2348,9 +2515,10 @@ async function entrarAdmin() {
         // No hay sesión activa, iniciar nueva
         adminSession = session;
         sesionActiva = true;
-        await actualizarSesionActiva(session.user.id, true);
+        const sessionToken = generateSessionToken();
+        await actualizarSesionActiva(session.user.id, true, session.user.email, sessionToken);
         document.getElementById('admin-email-display').textContent = session.user.email;
-        await mostrarPanelAdminOTP();
+        await mostrarPanelAdminOTP(sessionToken);
         iniciarDetectorActividad();
         resetInactivityTimer();
         return;
@@ -2437,6 +2605,51 @@ async function probarOTP() {
   }
 }
 
+// Estilos CSS adicionales (se pueden agregar al CSS principal)
+const style = document.createElement('style');
+style.textContent = `
+  .error {
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+  }
+  
+  .success {
+    color: #155724;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+  }
+  
+  .info {
+    color: #0c5460;
+    background-color: #d1ecf1;
+    border: 1px solid #bee5eb;
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+  }
+  
+  .btn-danger {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  .btn-danger:hover {
+    background-color: #c82333;
+  }
+`;
+document.head.appendChild(style);
+
 // Exportar funciones al scope global
 window.mostrarVentana = mostrarVentana;
 window.guardarDatosInscripcion = guardarDatosInscripcion;
@@ -2461,5 +2674,7 @@ window.ordenarPorReferencia = ordenarPorReferencia;
 window.activarCohetes = activarCohetes;
 window.mostrarSeccion = mostrarSeccion;
 window.probarOTP = probarOTP;
+window.verificarOTP = verificarOTP;
+window.cancelarOTP = cancelarOTP;
 
 console.log('✅ Todas las funciones han sido cargadas correctamente');
