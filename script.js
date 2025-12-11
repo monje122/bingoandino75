@@ -2437,48 +2437,56 @@ function cancelarOTP() {
 
 // Función para cerrar sesión (MEJORADA)
 async function cerrarSesionAdmin() {
+  if (!confirm('¿Estás seguro de cerrar sesión?')) return;
+  
   try {
-    // Limpiar sesión activa completamente
+    // 1. Limpiar tabla sesiones_activas (LO MÁS IMPORTANTE)
     await supabase
       .from('sesiones_activas')
-      .update({
-        activa: false,
-        user_id: null,
+      .update({ 
+        activa: false, 
         user_email: null,
-        session_token: null,
-        login_timestamp: null,
         ultima_actividad: new Date().toISOString()
       })
       .eq('tipo', 'admin');
     
-    // Cerrar sesión en Supabase
-    const { error } = await supabase.auth.signOut();
-    if (error) console.error('Error cerrando sesión:', error);
+    // 2. Intentar cerrar sesión (sin preocuparse por errores)
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      // Ignorar errores de signOut
+      console.log('Info: Sesión ya estaba cerrada o expirada');
+    }
     
-    // Limpiar variables
+    // 3. Limpiar localStorage manualmente
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('supabase') || key.includes('sb-'))) {
+        keysToRemove.push(key);
+      }
+    }
+    
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+    sessionStorage.clear();
+    
+    // 4. Resetear variables
     adminSession = null;
     sesionActiva = false;
-    clearTimeout(inactivityTimer);
     
-    // Mostrar mensaje de confirmación
-    alert('✅ Sesión cerrada correctamente. El panel admin está ahora disponible para otros usuarios.');
+    // 5. Mensaje y recarga
+    alert('✅ Sesión cerrada. Panel liberado para otros usuarios.');
     
-    // Volver a login
-    mostrarVentana('admin-login');
-    
-    // Limpiar formulario
-    document.getElementById('admin-email').value = '';
-    const errorDiv = document.getElementById('admin-error');
-    errorDiv.textContent = '';
-    errorDiv.className = '';
-    
-    // Remover campo OTP si existe
-    const otpContainer = document.getElementById('otp-container');
-    if (otpContainer) otpContainer.remove();
+    // Pequeño delay para asegurar
+    setTimeout(() => {
+      // Recargar con timestamp para evitar cache
+      window.location.search = '?t=' + Date.now();
+    }, 200);
     
   } catch (error) {
-    console.error('Error en cerrarSesionAdmin:', error);
-    alert('Error al cerrar sesión');
+    console.error('Error en cerrar sesión:', error);
+    // Recargar de todas formas
+    setTimeout(() => location.reload(), 300);
   }
 }
 
