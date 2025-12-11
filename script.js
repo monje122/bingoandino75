@@ -40,6 +40,33 @@ let usuario = {
 };
 
 let totalCartones = 0;
+// ==================== VERSIÓN MÁS SIMPLE ====================
+let contador = 0;
+
+// Configurar después de cargar
+setTimeout(() => {
+  const logo = document.querySelector('#bienvenida img, .logo, h1');
+  
+  if (logo) {
+    logo.addEventListener('click', () => {
+      contador++;
+      
+      // Reset en 3 segundos
+      setTimeout(() => { contador = 0; }, 3000);
+      
+      // Si son 7 clicks
+      if (contador === 7) {
+        contador = 0;
+        // Mostrar botón oculto
+        const botonAdmin = document.getElementById('boton-admin-oculto');
+        if (botonAdmin) {
+          botonAdmin.style.display = 'inline-block';
+          alert('🔓 Botón Admin activado');
+        }
+      }
+    });
+  }
+}, 1000);
 
 // ==================== FUNCIONES DE CONFIGURACIÓN ====================
 async function getConfigValue(clave, fallback = null) {
