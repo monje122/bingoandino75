@@ -60,9 +60,780 @@ async function setConfigValue(clave, value) {
   return !error;
 }
 
+// ==================== SISTEMA DE SESIÓN ÚNICA ====================
+// Función para crear la tabla de sesiones activas
+async function crearTablaSesiones() {
+  console.log('🔄 Creando/verificando tabla de sesiones...');
+  try {
+    // Intentar crear la tabla si no existe
+    const { error } = await supabase
+      .from('sesiones_activas')
+      .upsert([
+        {
+          tipo: 'admin',
+          user_id: null,
+          user_email: null,
+          session_token: null,
+          activa: false,
+          ultima_actividad: new Date().toISOString(),
+          login_timestamp: null
+        }
+      ], { onConflict: 'tipo' });
+      
+    if (error) {
+      console.warn('Nota: La tabla ya existe o hay error de estructura:', error.message);
+      // No es crítico, continuamos
+    }
+  } catch (e) {
+    console.warn('Error creando tabla sesiones:', e);
+  }
+}
+
+// Función para verificar sesión activa
+async function verificarSesionActiva(userEmail = null) {
+  console.log('🔍 Verificando sesión activa para:', userEmail || 'cualquiera');
+  
+  try {
+    const { data: sesionData, error } = await supabase
+      .from('sesiones_activas')
+      .select('*')
+      .eq('tipo', 'admin')
+      .single();
+      
+    if (error) {
+      console.log('❌ Error obteniendo sesión:', error.message);
+      
+      // Si no existe la fila, crearla
+      if (error.code === 'PGRST116' || error.message.includes('No rows')) {
+        console.log('📝 Creando registro de sesión inicial...');
+        await crearTablaSesiones();
+        return false;
+      }
+      return false;
+    }
+    
+    console.log('📊 Datos de sesión:', sesionData);
+    
+    if (!sesionData || !sesionData.activa) {
+      console.log('ℹ️ No hay sesión activa');
+      return false;
+    }
+    
+    // Verificar que la sesión no haya expirado
+    const ultimaActividad = new Date(sesionData.ultima_actividad);
+    const ahora = new Date();
+    const minutosDesdeUltimaActividad = (ahora - ultimaActividad) / (1000 * 60);
+    
+    console.log(`⏰ Minutos desde última actividad: ${Math.floor(minutosDesdeUltimaActividad)}`);
+    
+    // Si pasaron más de 30 minutos, considerar expirada
+    if (minutosDesdeUltimaActividad > 30) {
+      console.log('⚠️ Sesión expirada por inactividad');
+      await actualizarSesionActiva(null, false, null, null);
+      return false;
+    }
+    
+    // Si se proporciona email, verificar si es el mismo usuario
+    if (userEmail && sesionData.user_email !== userEmail) {
+      console.log(`🚫 Sesión ocupada por otro: ${sesionData.user_email}`);
+      return 'ocupado_por_otro';
+    }
+    
+    console.log('✅ Sesión activa válida');
+    return true;
+  } catch (error) {
+    console.error('❌ Error en verificarSesionActiva:', error);
+    return false;
+  }
+}
+
+// Función para actualizar sesión activa
+async function actualizarSesionActiva(userId, activa, userEmail = null, sessionToken = null) {
+  console.log('🔄 Actualizando sesión:', { activa, userEmail });
+  
+  try {
+    const updateData = {
+      tipo: 'admin',
+      user_id: userId,
+      user_email: userEmail,
+      session_token: sessionToken,
+      activa: activa,
+      ultima_actividad: new Date().toISOString(),
+      login_timestamp: activa ? new Date().toISOString() : null
+    };
+    
+    const { error } = await supabase
+      .from('sesiones_activas')
+      .upsert(updateData, { onConflict: 'tipo' });
+      
+    if (error) {
+      console.error('❌ Error actualizando sesión:', error);
+      return false;
+    }
+    
+    console.log('✅ Sesión actualizada correctamente');
+    return true;
+  } catch (error) {
+    console.error('❌ Error en actualizarSesionActiva:', error);
+    return false;
+  }
+}
+
+// Función para actualizar actividad
+async function actualizarActividadSesion() {
+  if (sesionActiva) {
+    try {
+      await supabase
+        .from('sesiones_activas')
+        .update({ ultima_actividad: new Date().toISOString() })
+        .eq('tipo', 'admin');
+    } catch (error) {
+      console.error('Error actualizando actividad:', error);
+    }
+  }
+}
+
+// Función para forzar cierre remoto
+async function forzarCerrarSesionRemota() {
+  if (!confirm('⚠️ ¿Forzar cierre de todas las sesiones?\n\nEsto cerrará la sesión en TODOS los dispositivos.')) {
+    return;
+  }
+  
+  try {
+    // 1. Limpiar sesión activa en la base de datos
+    const { error: updateError } = await supabase
+      .from('sesiones_activas')
+      .update({ 
+        activa: false,
+        session_token: null,
+        user_id: null,
+        user_email: null,
+        ultima_actividad: new Date().toISOString()
+      })
+      .eq('tipo', 'admin');
+    
+    if (updateError) {
+      console.error('Error actualizando sesión:', updateError);
+      throw updateError;
+    }
+    
+    // 2. Cerrar sesión en Supabase Auth localmente
+    await supabase.auth.signOut();
+    
+    alert('✅ Sesiones remotas cerradas. Ahora puedes iniciar sesión.');
+    
+    // 3. Recargar para limpiar estado
+    location.reload();
+    
+  } catch (error) {
+    console.error('❌ Error forzando cierre:', error);
+    alert('❌ Error al forzar cierre de sesión');
+  }
+}
+
+// ==================== LOGIN CON DOBLE FACTOR ====================
+async function loginAdmin() {
+  const email = document.getElementById('admin-email').value.trim();
+  const password = document.getElementById('admin-password').value;
+  const errorDiv = document.getElementById('admin-error');
+  
+  errorDiv.textContent = '';
+  errorDiv.className = '';
+  
+  if (!email || !password) {
+    errorDiv.textContent = 'Por favor ingresa email y contraseña';
+    errorDiv.className = 'error';
+    return;
+  }
+  
+  if (email !== ADMIN_EMAIL) {
+    errorDiv.textContent = 'No tiene permisos de administrador';
+    errorDiv.className = 'error';
+    return;
+  }
+  
+  try {
+    errorDiv.textContent = '🔐 Verificando contraseña...';
+    errorDiv.className = 'info';
+    
+    // ========== PASO 1: VERIFICAR CONTRASEÑA ==========
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password
+    });
+    
+    if (authError) {
+      console.error('Error auth:', authError);
+      if (authError.message.includes('Invalid login credentials')) {
+        errorDiv.textContent = '❌ Contraseña incorrecta';
+      } else {
+        errorDiv.textContent = '❌ Error: ' + authError.message;
+      }
+      errorDiv.className = 'error';
+      document.getElementById('admin-password').value = '';
+      document.getElementById('admin-password').focus();
+      return;
+    }
+    
+    console.log('✅ Contraseña CORRECTA. User ID:', authData.user.id);
+    
+    // ========== PASO 2: VERIFICAR SESIÓN ACTIVA ==========
+    errorDiv.textContent = '🔍 Verificando sesiones activas...';
+    
+    const estadoSesion = await verificarSesionActiva(email);
+    
+    if (estadoSesion === 'ocupado_por_otro') {
+      const { data: sesionInfo } = await supabase
+        .from('sesiones_activas')
+        .select('login_timestamp, user_email')
+        .eq('tipo', 'admin')
+        .single();
+      
+      let mensaje = '⚠️ **PANEL ADMIN OCUPADO**\n\n';
+      mensaje += 'Ya hay una sesión de administrador activa. ';
+      
+      if (sesionInfo?.login_timestamp) {
+        const horaLogin = new Date(sesionInfo.login_timestamp);
+        mensaje += `\n\nLa sesión se inició el: ${horaLogin.toLocaleDateString()} a las ${horaLogin.toLocaleTimeString()}`;
+      }
+      
+      mensaje += '\n\nDebes esperar a que cierre sesión o esperar 30 minutos de inactividad.';
+      
+      await supabase.auth.signOut();
+      limpiarStorageTemporal();
+      
+      errorDiv.innerHTML = mensaje;
+      errorDiv.className = 'error';
+      errorDiv.style.backgroundColor = '#fff3cd';
+      errorDiv.style.border = '1px solid #ffeaa7';
+      errorDiv.style.padding = '15px';
+      errorDiv.style.borderRadius = '5px';
+      
+      return;
+    }
+    
+    // ========== PASO 3: REGISTRAR EN TABLA sesiones_activas ==========
+    errorDiv.textContent = '📝 Registrando sesión...';
+    
+    // IMPORTANTE: Generar token de sesión
+    const sessionToken = generateSessionToken();
+    
+    // Intentar escribir en la tabla
+    const { data: sesionData, error: sesionError } = await supabase
+      .from('sesiones_activas')
+      .upsert({
+        tipo: 'admin',
+        user_id: authData.user.id,
+        user_email: email,
+        session_token: sessionToken,
+        activa: false,  // Temporalmente false hasta OTP
+        ultima_actividad: new Date().toISOString(),
+        login_timestamp: null
+      }, { onConflict: 'tipo' })
+      .select();
+    
+    if (sesionError) {
+      console.error('❌ Error registrando sesión en BD:', sesionError);
+      
+      // Intentar con método alternativo si falla
+      try {
+        console.log('🔄 Intentando método alternativo...');
+        
+        // Primero obtener sesión actual para forzar actualización
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log('Sesión actual:', session);
+        
+        // Intentar update en lugar de upsert
+        const { error: updateError } = await supabase
+          .from('sesiones_activas')
+          .update({
+            user_id: authData.user.id,
+            user_email: email,
+            session_token: sessionToken,
+            activa: false,
+            ultima_actividad: new Date().toISOString()
+          })
+          .eq('tipo', 'admin');
+        
+        if (updateError) {
+          throw updateError;
+        }
+        
+        console.log('✅ Sesión registrada con update');
+      } catch (altError) {
+        console.error('❌ Método alternativo también falló:', altError);
+        throw new Error('No se pudo registrar la sesión en la base de datos');
+      }
+    } else {
+      console.log('✅ Sesión registrada en BD:', sesionData);
+    }
+    
+    // ========== PASO 4: ENVIAR OTP ==========
+    errorDiv.textContent = '📧 Enviando código de verificación...';
+    
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: window.location.origin
+      }
+    });
+    
+    if (otpError) {
+      console.error('Error enviando OTP:', otpError);
+      await supabase.auth.signOut();
+      limpiarStorageTemporal();
+      
+      if (otpError.message.includes('rate limit')) {
+        errorDiv.textContent = 'Demasiados intentos. Espera unos minutos.';
+      } else {
+        errorDiv.textContent = 'Error enviando el código: ' + otpError.message;
+      }
+      errorDiv.className = 'error';
+      return;
+    }
+    
+    // ========== PASO 5: MOSTRAR INTERFAZ OTP ==========
+    errorDiv.innerHTML = '✅ <strong>Contraseña correcta!</strong><br>📧 <strong>Código enviado!</strong> Revisa tu correo.';
+    errorDiv.className = 'success';
+    
+    // Guardar datos para OTP
+    sessionStorage.setItem('admin_email_temp', email);
+    sessionStorage.setItem('admin_user_id', authData.user.id);
+    sessionStorage.setItem('admin_session_token', sessionToken);
+    
+    // Mostrar campo OTP
+    mostrarCampoOTP();
+    
+  } catch (error) {
+    console.error('❌ Error inesperado en login:', error);
+    errorDiv.textContent = '❌ Error: ' + (error.message || 'Error inesperado');
+    errorDiv.className = 'error';
+    
+    // Limpiar en caso de error
+    await supabase.auth.signOut().catch(() => {});
+    limpiarStorageTemporal();
+  }
+}
+// Función para verificar OTP
+async function verificarOTP() {
+  const email = sessionStorage.getItem('admin_email_temp');
+  const userId = sessionStorage.getItem('admin_user_id');
+  const sessionToken = sessionStorage.getItem('admin_session_token');
+  const otpCode = document.getElementById('otp-code').value.trim();
+  const errorDiv = document.getElementById('admin-error');
+  
+  errorDiv.textContent = '';
+  errorDiv.className = '';
+  
+  if (!email || !userId) {
+    errorDiv.textContent = '❌ Error: Sesión expirada. Vuelve a intentar.';
+    errorDiv.className = 'error';
+    cancelarOTP();
+    return;
+  }
+  
+  if (!otpCode || otpCode.length !== 6) {
+    errorDiv.textContent = '❌ Ingresa un código de 6 dígitos válido';
+    errorDiv.className = 'error';
+    document.getElementById('otp-code').focus();
+    return;
+  }
+  
+  try {
+    errorDiv.textContent = '🔐 Verificando código...';
+    errorDiv.className = 'info';
+    
+    // ========== PASO 1: VERIFICAR OTP ==========
+    const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+      email: email,
+      token: otpCode.trim(),
+      type: 'email'
+    });
+    
+    if (otpError) {
+      console.error('Error OTP:', otpError);
+      
+      if (otpError.message.includes('token has expired')) {
+        errorDiv.textContent = '❌ El código ha expirado. Solicita uno nuevo.';
+      } else if (otpError.message.includes('invalid')) {
+        errorDiv.textContent = '❌ Código incorrecto. Intenta de nuevo.';
+      } else {
+        errorDiv.textContent = '❌ Error verificando código: ' + otpError.message;
+      }
+      errorDiv.className = 'error';
+      document.getElementById('otp-code').value = '';
+      document.getElementById('otp-code').focus();
+      return;
+    }
+    
+    console.log('✅ OTP CORRECTO. Usuario:', otpData.user.id);
+    
+    // ========== PASO 2: ACTUALIZAR SESIÓN EN BD ==========
+    errorDiv.textContent = '🔄 Activando sesión...';
+    
+    const { error: updateError } = await supabase
+      .from('sesiones_activas')
+      .update({
+        user_id: userId,
+        user_email: email,
+        session_token: sessionToken,
+        activa: true,
+        ultima_actividad: new Date().toISOString(),
+        login_timestamp: new Date().toISOString()
+      })
+      .eq('tipo', 'admin');
+    
+    if (updateError) {
+      console.error('❌ Error actualizando sesión activa:', updateError);
+      throw new Error('No se pudo activar la sesión');
+    }
+    
+    console.log('✅ Sesión activada en BD');
+    
+    // ========== PASO 3: CONFIGURAR SESIÓN LOCAL ==========
+    clearTimeout(otpTimeout);
+    
+    adminSession = otpData.session;
+    sesionActiva = true;
+    
+    // Limpiar temporales
+    sessionStorage.removeItem('admin_email_temp');
+    sessionStorage.removeItem('admin_user_id');
+    sessionStorage.removeItem('admin_session_token');
+    
+    // ========== PASO 4: MOSTRAR PANEL ==========
+    document.getElementById('admin-email-display').textContent = email;
+    await mostrarPanelAdminOTP(sessionToken);
+    
+    // ========== PASO 5: INICIAR DETECTOR INACTIVIDAD ==========
+    iniciarDetectorActividad();
+    resetInactivityTimer();
+    
+  } catch (error) {
+    console.error('❌ Error en verificarOTP:', error);
+    
+    clearTimeout(otpTimeout);
+    
+    if (error.message?.includes('network') || error.message?.includes('fetch')) {
+      errorDiv.textContent = '🌐 Error de conexión. Verifica tu internet.';
+    } else {
+      errorDiv.textContent = '❌ Error: ' + error.message;
+    }
+    
+    errorDiv.className = 'error';
+    
+    // Limpiar
+    sessionStorage.removeItem('admin_email_temp');
+    sessionStorage.removeItem('admin_user_id');
+    sessionStorage.removeItem('admin_session_token');
+    
+    setTimeout(() => {
+      if (!sesionActiva) cancelarOTP();
+    }, 3000);
+  }
+}
+
+// Mostrar campo OTP
+function mostrarCampoOTP() {
+  const loginForm = document.getElementById('login-fields');
+  const email = sessionStorage.getItem('admin_email_temp') || '';
+  
+  // Crear contenedor OTP
+  const otpContainer = document.getElementById('otp-container');
+  if (otpContainer) {
+    otpContainer.style.display = 'block';
+    document.getElementById('otp-email-display').textContent = email;
+  }
+  
+  // Ocultar campos de contraseña
+  document.getElementById('admin-password').parentElement.style.display = 'none';
+  document.querySelector('button[onclick="loginAdmin()"]').style.display = 'none';
+  
+  // Configurar timeout automático para OTP
+  clearTimeout(otpTimeout);
+  otpTimeout = setTimeout(() => {
+    if (!sesionActiva) {
+      const errorDiv = document.getElementById('admin-error');
+      errorDiv.innerHTML = '⏰ <strong>Código expirado</strong><br>El código OTP ha expirado. Vuelve a intentar.';
+      errorDiv.className = 'error';
+      cancelarOTP();
+    }
+  }, OTP_TIMEOUT);
+  
+  document.getElementById('otp-code').focus();
+}
+
+// Cancelar OTP
+function cancelarOTP() {
+  clearTimeout(otpTimeout);
+  
+  sessionStorage.removeItem('admin_email_temp');
+  
+  const otpContainer = document.getElementById('otp-container');
+  if (otpContainer) otpContainer.style.display = 'none';
+  
+  // Restaurar campos de contraseña
+  const passwordField = document.getElementById('admin-password').parentElement;
+  if (passwordField) passwordField.style.display = 'block';
+  
+  const loginButton = document.querySelector('button[onclick="loginAdmin()"]');
+  if (loginButton) loginButton.style.display = 'block';
+  
+  document.getElementById('admin-password').value = '';
+  document.getElementById('otp-code').value = '';
+  
+  const errorDiv = document.getElementById('admin-error');
+  if (errorDiv) errorDiv.textContent = '';
+  
+  document.getElementById('admin-password').focus();
+}
+
+// Función para reenviar OTP
+async function reenviarOTP() {
+  const email = sessionStorage.getItem('admin_email_temp');
+  const errorDiv = document.getElementById('admin-error');
+  
+  if (!email) {
+    errorDiv.textContent = '❌ Error: Email no encontrado';
+    errorDiv.className = 'error';
+    return;
+  }
+  
+  try {
+    errorDiv.textContent = '🔄 Reenviando código...';
+    errorDiv.className = 'info';
+    
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: { shouldCreateUser: false }
+    });
+    
+    if (error) {
+      errorDiv.textContent = 'Error reenviando código: ' + error.message;
+      errorDiv.className = 'error';
+      return;
+    }
+    
+    clearTimeout(otpTimeout);
+    otpTimeout = setTimeout(() => {
+      if (!sesionActiva) {
+        const errorDiv = document.getElementById('admin-error');
+        errorDiv.innerHTML = '⏰ <strong>Código expirado</strong><br>El código OTP ha expirado. Vuelve a intentar.';
+        errorDiv.className = 'error';
+        cancelarOTP();
+      }
+    }, OTP_TIMEOUT);
+    
+    errorDiv.innerHTML = '✅ <strong>Código reenviado!</strong> Revisa tu correo.';
+    errorDiv.className = 'success';
+    
+  } catch (error) {
+    console.error('Error reenviando OTP:', error);
+    errorDiv.textContent = '❌ Error reenviando código';
+    errorDiv.className = 'error';
+  }
+}
+
+// Generar token único para sesión
+function generateSessionToken() {
+  return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// Mostrar panel admin con OTP
+async function mostrarPanelAdminOTP(sessionToken) {
+  console.log('🎉 Mostrando panel admin con token:', sessionToken);
+  
+  document.getElementById('admin-login').classList.add('oculto');
+  document.getElementById('admin-panel').classList.remove('oculto');
+  
+  // Mostrar estado de sesión única
+  const sessionInfo = document.createElement('div');
+  sessionInfo.id = 'session-info';
+  sessionInfo.style.margin = '10px 0';
+  sessionInfo.style.padding = '10px';
+  sessionInfo.style.borderRadius = '5px';
+  sessionInfo.style.fontSize = '14px';
+  sessionInfo.style.background = '#d4edda';
+  sessionInfo.style.color = '#155724';
+  sessionInfo.style.border = '1px solid #c3e6cb';
+  sessionInfo.innerHTML = `
+    ✅ <strong>SESIÓN ÚNICA ACTIVA</strong><br>
+    <small>Solo tú puedes acceder hasta que cierres sesión.</small><br>
+    <small>Token: ${sessionToken?.substring(0, 20)}...</small>
+  `;
+  
+  const panel = document.getElementById('admin-panel');
+  const firstElement = panel.querySelector('h2').nextElementSibling;
+  if (firstElement) {
+    panel.insertBefore(sessionInfo, firstElement.nextSibling);
+  }
+  
+  // Agregar botón de cerrar sesión prominente
+  const cerrarBtn = document.createElement('button');
+  cerrarBtn.textContent = '🔒 Cerrar Sesión (Liberar Panel)';
+  cerrarBtn.className = 'btn-danger';
+  cerrarBtn.style.margin = '10px 0';
+  cerrarBtn.style.padding = '10px 20px';
+  cerrarBtn.style.fontSize = '16px';
+  cerrarBtn.onclick = cerrarSesionAdmin;
+  
+  // Agregar botón de forzar cierre remoto
+  const forzarBtn = document.createElement('button');
+  forzarBtn.textContent = '🔓 Forzar Cierre Remoto';
+  forzarBtn.style.margin = '10px 10px';
+  forzarBtn.style.padding = '10px 20px';
+  forzarBtn.style.fontSize = '16px';
+  forzarBtn.style.background = '#ff6b6b';
+  forzarBtn.style.color = 'white';
+  forzarBtn.style.border = 'none';
+  forzarBtn.style.borderRadius = '5px';
+  forzarBtn.onclick = forzarCerrarSesionRemota;
+  
+  if (firstElement) {
+    panel.insertBefore(cerrarBtn, firstElement.nextSibling.nextSibling);
+    panel.insertBefore(forzarBtn, cerrarBtn.nextSibling);
+  }
+  
+  // Cargar datos del panel
+  await cargarPanelAdmin();
+}
+
+// Función para cerrar sesión
+async function cerrarSesionAdmin() {
+  console.log('👋 Cerrando sesión admin...');
+  
+  try {
+    // Limpiar sesión activa
+    await actualizarSesionActiva(null, false);
+    
+    // Cerrar sesión en Supabase
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error('Error cerrando sesión Supabase:', error);
+    
+    // Limpiar variables
+    adminSession = null;
+    sesionActiva = false;
+    clearTimeout(inactivityTimer);
+    clearTimeout(otpTimeout);
+    
+    // Limpiar formulario
+    document.getElementById('admin-email').value = '';
+    document.getElementById('admin-password').value = '';
+    
+    const errorDiv = document.getElementById('admin-error');
+    if (errorDiv) errorDiv.textContent = '';
+    
+    // Ocultar contenedor OTP si existe
+    const otpContainer = document.getElementById('otp-container');
+    if (otpContainer) otpContainer.style.display = 'none';
+    
+    // Restaurar campos de login
+    const passwordField = document.getElementById('admin-password').parentElement;
+    if (passwordField) passwordField.style.display = 'block';
+    
+    const loginButton = document.querySelector('button[onclick="loginAdmin()"]');
+    if (loginButton) loginButton.style.display = 'block';
+    
+    // Volver a login
+    document.getElementById('admin-panel').classList.add('oculto');
+    document.getElementById('admin-login').classList.remove('oculto');
+    
+    console.log('✅ Sesión cerrada correctamente');
+    
+  } catch (error) {
+    console.error('❌ Error en cerrarSesionAdmin:', error);
+    alert('Error al cerrar sesión');
+  }
+}
+
+// Timer de inactividad
+function resetInactivityTimer() {
+  clearTimeout(inactivityTimer);
+  if (sesionActiva) {
+    console.log('⏰ Reiniciando timer de inactividad (30 minutos)');
+    inactivityTimer = setTimeout(async () => {
+      if (sesionActiva) {
+        console.log('⏰ Sesión expirada por inactividad');
+        alert('Sesión expirada por inactividad (30 minutos)');
+        await cerrarSesionAdmin();
+      }
+    }, SESSION_TIMEOUT);
+  }
+}
+
+// Eventos para detectar actividad
+function iniciarDetectorActividad() {
+  console.log('👀 Iniciando detector de actividad');
+  ['click', 'mousemove', 'keypress', 'scroll'].forEach(event => {
+    document.addEventListener(event, () => {
+      if (sesionActiva) {
+        actualizarActividadSesion();
+        resetInactivityTimer();
+      }
+    });
+  });
+}
+
+// Limpiar storage temporal
+function limpiarStorageTemporal() {
+  sessionStorage.removeItem('admin_email_temp');
+  clearTimeout(otpTimeout);
+  
+  // Limpiar tokens temporales de Supabase
+  const keysToRemove = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && key.includes('sb-')) {
+      keysToRemove.push(key);
+    }
+  }
+  
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+}
+
+// ==================== VERIFICACIÓN INICIAL ====================
+async function verificarSesionInicial() {
+  console.log('🔍 Verificando sesión inicial al cargar...');
+  
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session && session.user.email === ADMIN_EMAIL) {
+      console.log('✅ Usuario autenticado encontrado:', session.user.email);
+      
+      // Verificar si hay sesión activa en BD
+      const { data: sesionData } = await supabase
+        .from('sesiones_activas')
+        .select('*')
+        .eq('tipo', 'admin')
+        .single();
+      
+      if (sesionData && sesionData.activa && sesionData.user_id === session.user.id) {
+        console.log('✅ Sesión válida y activa, mostrando panel');
+        adminSession = session;
+        sesionActiva = true;
+        document.getElementById('admin-email-display').textContent = session.user.email;
+        iniciarDetectorActividad();
+        resetInactivityTimer();
+        document.getElementById('admin-login').classList.add('oculto');
+        document.getElementById('admin-panel').classList.remove('oculto');
+        await cargarPanelAdmin();
+      } else {
+        console.log('⚠️ Sesión no activa en BD, cerrando');
+        await cerrarSesionAdmin();
+      }
+    } else {
+      console.log('ℹ️ No hay usuario autenticado válido');
+    }
+  } catch (error) {
+    console.error('❌ Error verificando sesión inicial:', error);
+  }
+}
+
 // ==================== FUNCIONES FALTANTES QUE NECESITA EL HTML ====================
 
-// Función para ver lista de aprobados (referenciada en HTML)
+// Función para ver lista de aprobados
 async function verListaAprobados() {
   const { data, error } = await supabase
     .from('inscripciones')
@@ -126,7 +897,7 @@ async function verListaAprobados() {
   listaDiv.appendChild(tabla);
 }
 
-// Función para detectar cartones duplicados (referenciada en HTML)
+// Función para detectar cartones duplicados
 async function detectarCartonesDuplicados() {
   const boton = document.getElementById('btnDuplicados');
   if (!boton) return;
@@ -136,7 +907,6 @@ async function detectarCartonesDuplicados() {
   boton.textContent = 'Buscando duplicados...';
 
   try {
-    // 1) Trae inscripciones activas
     const { data, error } = await supabase
       .from('inscripciones')
       .select('id,nombre,cedula,estado,cartones')
@@ -144,7 +914,6 @@ async function detectarCartonesDuplicados() {
 
     if (error) throw error;
 
-    // 2) Construye índice
     const indice = new Map();
 
     (data || []).forEach(ins => {
@@ -169,7 +938,6 @@ async function detectarCartonesDuplicados() {
       });
     });
 
-    // 3) Filtra sólo números con más de un dueño
     const duplicados = [];
     const duplicadosSet = new Set();
     
@@ -184,13 +952,9 @@ async function detectarCartonesDuplicados() {
       }
     }
 
-    // 4) Ordena
     duplicados.sort((a, b) => (b.veces - a.veces) || (a.numero - b.numero));
 
-    // 5) Renderiza resultados
     renderDuplicados(duplicados);
-    
-    // 6) Resalta celdas
     resaltarCeldasDuplicadas(duplicadosSet);
 
   } catch (e) {
@@ -274,7 +1038,7 @@ function resaltarCeldasDuplicadas(duplicadosSet) {
   });
 }
 
-// Función para ver huérfanos (referenciada en HTML)
+// Función para ver huérfanos
 async function verHuerfanos() {
   const btn = document.getElementById('btnVerHuerfanos');
   if (!btn) return;
@@ -284,7 +1048,6 @@ async function verHuerfanos() {
   btn.textContent = 'Buscando...';
   
   try {
-    // Llamar a la función RPC en Supabase
     const { data, error } = await supabase.rpc('rpc_listar_cartones_huerfanos', {
       _min_age: '0 minutes'
     });
@@ -353,7 +1116,7 @@ function renderTablaHuerfanos(rows) {
   cont.appendChild(tabla);
 }
 
-// Función para liberar huérfanos (referenciada en HTML)
+// Función para liberar huérfanos
 async function liberarHuerfanos() {
   if (!confirm('¿Liberar todos los cartones huérfanos?')) return;
   
@@ -373,7 +1136,6 @@ async function liberarHuerfanos() {
 
     alert(`Listo. Cartones liberados: ${data ?? 0}`);
     
-    // Refrescar UI
     await verHuerfanos();
     await cargarCartones();
     await contarCartonesVendidos();
@@ -387,7 +1149,7 @@ async function liberarHuerfanos() {
   }
 }
 
-// Función para guardar precio por cartón (referenciada en HTML)
+// Función para guardar precio por cartón
 async function guardarPrecioPorCarton() {
   const nuevoPrecio = parseFloat(document.getElementById('precioCarton').value);
   if (isNaN(nuevoPrecio) || nuevoPrecio < 0) {
@@ -405,14 +1167,12 @@ async function guardarPrecioPorCarton() {
   } else {
     alert('Precio actualizado correctamente');
     precioPorCarton = nuevoPrecio;
-    // Recargar el precio en la interfaz
     await cargarPrecioPorCarton();
   }
 }
 
-// ==================== FUNCIONES EXISTENTES QUE NECESITAN CORRECCIÓN ====================
+// ==================== FUNCIONES EXISTENTES ====================
 
-// Función para obtener el monto total recaudado (corregida)
 async function obtenerMontoTotalRecaudado() {
    const { data, error } = await supabase
     .from('inscripciones')
@@ -444,7 +1204,6 @@ async function obtenerMontoTotalRecaudado() {
   }
 }
 
-// Función para contar cartones vendidos (corregida)
 async function contarCartonesVendidos() {
   const { count, error } = await supabase
     .from('cartones')
@@ -463,7 +1222,6 @@ async function contarCartonesVendidos() {
   return count || 0;
 }
 
-// Función para renderizar botones de promociones (corregida)
 function renderizarBotonesPromociones() {
   const promoBox = document.getElementById('promoBox');
   if (!promoBox) return;
@@ -483,7 +1241,6 @@ function renderizarBotonesPromociones() {
         algunaActiva = true;
         boton.title = `${promo.cantidad} cartones por ${promo.precio.toFixed(2)} Bs`;
         
-        // Habilitar clic
         boton.onclick = () => seleccionarPromocion(index + 1);
       } else {
         descElement.textContent = `Promo ${index + 1} (No disponible)`;
@@ -492,7 +1249,6 @@ function renderizarBotonesPromociones() {
         boton.onclick = null;
       }
       
-      // Remover selección anterior
       boton.classList.remove('seleccionado');
     }
   });
@@ -502,6 +1258,11 @@ function renderizarBotonesPromociones() {
 
 // ==================== FUNCIONES PRINCIPALES ====================
 window.addEventListener('DOMContentLoaded', async () => {
+  console.log('🚀 Inicializando sistema...');
+  
+  // Crear tabla de sesiones si no existe
+  await crearTablaSesiones();
+  
   await obtenerTotalCartones();
   await cargarPrecioPorCarton();
   await cargarConfiguracionModoCartones();
@@ -532,8 +1293,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Mostrar términos
   document.getElementById('modal-terminos').classList.remove('oculto');
   
-  // Agregar botones adicionales admin
-  agregarBotonesAdicionalesAdmin();
+  console.log('✅ Sistema inicializado correctamente');
 });
 
 async function obtenerTotalCartones() {
@@ -569,12 +1329,10 @@ function actualizarPreseleccion() {
   let cant = parseInt(document.getElementById('cantidadCartones').value) || 1;
   const maxDisponibles = totalCartones - cartonesOcupados.length;
   
-  // En modo fijo, la cantidad siempre es la fija
   if (modoCartones === 'fijo') {
     cant = cantidadFijaCartones;
     document.getElementById('cantidadCartones').value = cantidadFijaCartones;
   } else {
-    // En modo libre, limitar por disponibilidad
     cant = Math.min(cant, maxDisponibles);
     document.getElementById('cantidadCartones').value = cant;
   }
@@ -583,9 +1341,8 @@ function actualizarPreseleccion() {
     (cant * precioPorCarton).toFixed(2);
 }
 
-// botones + y − - CORREGIDOS
+// botones + y −
 document.getElementById('btnMas').onclick = () => {
-  // En modo fijo, no permitir aumentar
   if (modoCartones === 'fijo') {
     return;
   }
@@ -594,7 +1351,6 @@ document.getElementById('btnMas').onclick = () => {
 };
 
 document.getElementById('btnMenos').onclick = () => {
-  // En modo fijo, no permitir disminuir
   if (modoCartones === 'fijo') {
     return;
   }
@@ -602,9 +1358,7 @@ document.getElementById('btnMenos').onclick = () => {
   limpiarPromoPorCambioCantidad();
 };
 
-// detectar tecleo manual - CORREGIDO
 document.getElementById('cantidadCartones').addEventListener('input', function() {
-  // En modo fijo, bloquear entrada manual
   if (modoCartones === 'fijo') {
     this.value = cantidadFijaCartones;
   }
@@ -703,11 +1457,10 @@ function confirmarCantidad() {
     
     if (modoCartones === 'fijo') {
       if (cant !== cantidadFijaCartones) {
-        // Bloquear entrada de usuario si no es la cantidad fija
         document.getElementById('cantidadCartones').value = cantidadFijaCartones;
-        cant = cantidadFijaCartones; // Asegurar que use la cantidad fija
+        cant = cantidadFijaCartones;
       }
-    } else { // Modo libre
+    } else {
       if (isNaN(cant) || cant < 1) {
         return alert('Ingresa un número válido');
       }
@@ -1492,13 +2245,11 @@ async function cargarConfiguracionModoCartones() {
     if (!cantError && cantData) {
       cantidadFijaCartones = parseInt(cantData.valore) || 1;
       document.getElementById('cantidadCartones').value = cantidadFijaCartones;
-      // Deshabilitar botones en modo fijo
       document.getElementById('btnMas').disabled = true;
       document.getElementById('btnMenos').disabled = true;
       document.getElementById('cantidadCartones').readOnly = true;
     }
   } else {
-    // Habilitar botones en modo libre
     document.getElementById('btnMas').disabled = false;
     document.getElementById('btnMenos').disabled = false;
     document.getElementById('cantidadCartones').readOnly = false;
@@ -1537,7 +2288,6 @@ function cambiarModoCartones() {
   const contenedor = document.getElementById('contenedorCartonesFijos');
   contenedor.style.display = (modo === 'fijo') ? 'block' : 'none';
   
-  // Previsualizar el cambio
   if (modo === 'fijo') {
     const cantidad = document.getElementById('cantidadCartonesFijos').value || 1;
     document.getElementById('btnMas').disabled = true;
@@ -1574,7 +2324,6 @@ async function guardarModoCartones() {
     console.error(error);
   } else {
     alert('Modo actualizado correctamente');
-    // Recargar configuración
     await cargarConfiguracionModoCartones();
   }
 }
@@ -1834,7 +2583,6 @@ function editarReferencia(td) {
   };
 }
 
-// ==================== FUNCIONES RESTANTES (continuación) ====================
 function normalizarNombre(s='') {
   return String(s)
     .trim()
@@ -2001,7 +2749,6 @@ async function subirCartones() {
 }
 
 async function borrarCartones() {
-  // Obtener la clave desde Supabase
   const { data: claveData, error: claveError } = await supabase
     .from('configuracion')
     .select('valore')
@@ -2027,7 +2774,6 @@ async function borrarCartones() {
     return;
   }
 
-  // Confirmación adicional
   if (!confirm("⚠️ ¿ESTÁS ABSOLUTAMENTE SEGURO?\n\nEsta acción borrará TODAS las imágenes de cartones.\n\nEsto NO se puede deshacer.")) {
     alert("Operación cancelada.");
     return;
@@ -2037,7 +2783,6 @@ async function borrarCartones() {
   status.innerHTML = '<p style="color:blue;">Cargando lista de imágenes...</p>';
 
   try {
-    // Paso 1: Obtener la lista de imágenes
     const { data: list, error: listError } = await supabase.storage
       .from('cartones')
       .list('', { limit: 1000 });
@@ -2050,7 +2795,6 @@ async function borrarCartones() {
       return;
     }
 
-    // Paso 2: Borrar
     const fileNames = list.map(file => file.name);
     const { error: deleteError } = await supabase.storage
       .from('cartones')
@@ -2073,633 +2817,8 @@ async function borrarCartones() {
 // ==================== INICIALIZACIÓN ====================
 // Inicializar detector de actividad
 iniciarDetectorActividad();
-// ESTO ESTÁ VACÍO - DEBES CAMBIARLO:
 
-
-// ==================== SISTEMA DE AUTENTICACIÓN OTP CON SESIÓN ÚNICA ====================
-// Función para crear la tabla de sesiones activas
-async function crearTablaSesiones() {
-  const { error } = await supabase
-    .from('sesiones_activas')
-    .upsert([
-      {
-        tipo: 'admin',
-        user_id: null,
-        user_email: null,
-        session_token: null,
-        activa: false,
-        ultima_actividad: new Date().toISOString(),
-        login_timestamp: null
-      }
-    ], { onConflict: 'tipo' });
-    
-  if (error && !error.message.includes('duplicate')) {
-    console.error('Error creando tabla sesiones:', error);
-  }
-}
-
-// Función para verificar sesión activa (REVISADA para sesión única)
-async function verificarSesionActiva(userEmail = null) {
-  try {
-    const { data: sesionData, error } = await supabase
-      .from('sesiones_activas')
-      .select('*')
-      .eq('tipo', 'admin')
-      .single();
-      
-    if (error) {
-      if (error.code === 'PGRST116') {
-        await crearTablaSesiones();
-        return false;
-      }
-      console.error('Error verificando sesión:', error);
-      return false;
-    }
-    
-    if (sesionData && sesionData.activa) {
-      // Verificar que la sesión no haya expirado
-      const ultimaActividad = new Date(sesionData.ultima_actividad);
-      const ahora = new Date();
-      const minutosDesdeUltimaActividad = (ahora - ultimaActividad) / (1000 * 60);
-      
-      // Si pasaron más de 30 minutos, considerar expirada
-      if (minutosDesdeUltimaActividad > 30) {
-        await actualizarSesionActiva(null, false, null, null);
-        return false;
-      }
-      
-      // Si se proporciona email, verificar si es el mismo usuario
-      if (userEmail && sesionData.user_email !== userEmail) {
-        return 'ocupado_por_otro'; // Sesión ocupada por otro usuario
-      }
-      
-      return true;
-    }
-    return false;
-  } catch (error) {
-    console.error('Error en verificarSesionActiva:', error);
-    return false;
-  }
-}
-
-// Función para actualizar sesión activa (REVISADA)
-async function actualizarSesionActiva(userId, activa, userEmail = null, sessionToken = null) {
-  try {
-    const { error } = await supabase
-      .from('sesiones_activas')
-      .upsert({
-        tipo: 'admin',
-        user_id: userId,
-        user_email: userEmail,
-        session_token: sessionToken,
-        activa: activa,
-        ultima_actividad: new Date().toISOString(),
-        login_timestamp: activa ? new Date().toISOString() : null
-      }, { onConflict: 'tipo' });
-      
-    return !error;
-  } catch (error) {
-    console.error('Error actualizando sesión:', error);
-    return false;
-  }
-}
-
-// Función para actualizar actividad
-async function actualizarActividadSesion() {
-  if (sesionActiva) {
-    await supabase
-      .from('sesiones_activas')
-      .update({ ultima_actividad: new Date().toISOString() })
-      .eq('tipo', 'admin');
-  }
-}
-
-// ==================== LOGIN CON DOBLE FACTOR ====================
-async function loginAdmin() {
-  const email = document.getElementById('admin-email').value.trim();
-  const password = document.getElementById('admin-password').value;
-  const errorDiv = document.getElementById('admin-error');
-  
-  errorDiv.textContent = '';
-  errorDiv.className = '';
-  
-  if (!email || !password) {
-    errorDiv.textContent = 'Por favor ingresa email y contraseña';
-    errorDiv.className = 'error';
-    return;
-  }
-  
-  // Verificar que sea el email del administrador
-  if (email !== ADMIN_EMAIL) {
-    errorDiv.textContent = 'No tiene permisos de administrador';
-    errorDiv.className = 'error';
-    return;
-  }
-  
-  // ==================== PASO 1: VERIFICAR CONTRASEÑA ====================
-  try {
-    errorDiv.textContent = '🔐 Verificando contraseña...';
-    errorDiv.className = 'info';
-    
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password
-    });
-    
-    if (authError) {
-      console.error('Error de autenticación:', authError);
-      
-      if (authError.message.includes('Invalid login credentials')) {
-        errorDiv.textContent = '❌ Contraseña incorrecta';
-      } else if (authError.message.includes('Email not confirmed')) {
-        errorDiv.textContent = '❌ Email no confirmado. Revisa tu correo.';
-      } else if (authError.message.includes('rate limit')) {
-        errorDiv.textContent = '⚠️ Demasiados intentos. Espera unos minutos.';
-      } else {
-        errorDiv.textContent = 'Error: ' + authError.message;
-      }
-      
-      errorDiv.className = 'error';
-      
-      // Limpiar campo de contraseña
-      document.getElementById('admin-password').value = '';
-      document.getElementById('admin-password').focus();
-      
-      return;
-    }
-    
-    console.log('✅ Contraseña CORRECTA');
-    
-    // ==================== PASO 2: VERIFICAR SESIÓN ACTIVA ====================
-    errorDiv.textContent = '🔍 Verificando sesiones activas...';
-    
-    const estadoSesion = await verificarSesionActiva(email);
-    
-    if (estadoSesion === 'ocupado_por_otro') {
-      // Obtener información de la sesión activa
-      const { data: sesionInfo } = await supabase
-        .from('sesiones_activas')
-        .select('login_timestamp, user_email')
-        .eq('tipo', 'admin')
-        .single();
-      
-      let mensaje = '⚠️ **PANEL ADMIN OCUPADO**\n\n';
-      mensaje += 'Ya hay una sesión de administrador activa. ';
-      
-      if (sesionInfo?.login_timestamp) {
-        const horaLogin = new Date(sesionInfo.login_timestamp);
-        mensaje += `\n\nLa sesión se inició el: ${horaLogin.toLocaleDateString()} a las ${horaLogin.toLocaleTimeString()}`;
-      }
-      
-      mensaje += '\n\nDebes esperar a que cierre sesión o esperar 30 minutos de inactividad.';
-      
-      // Cerrar la sesión temporal de contraseña
-      await supabase.auth.signOut();
-      limpiarStorageTemporal();
-      
-      errorDiv.innerHTML = mensaje;
-      errorDiv.className = 'error';
-      errorDiv.style.backgroundColor = '#fff3cd';
-      errorDiv.style.border = '1px solid #ffeaa7';
-      errorDiv.style.padding = '15px';
-      errorDiv.style.borderRadius = '5px';
-      
-      return;
-    }
-    
-    // ==================== PASO 3: ENVIAR OTP (segundo factor) ====================
-    errorDiv.textContent = '📧 Enviando código de verificación...';
-    
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: email,
-      options: {
-        shouldCreateUser: false,
-      }
-    });
-    
-    if (otpError) {
-      console.error('Error enviando OTP:', otpError);
-      
-      // Cerrar sesión temporal
-      await supabase.auth.signOut();
-      limpiarStorageTemporal();
-      
-      if (otpError.message.includes('rate limit')) {
-        errorDiv.textContent = 'Demasiados intentos. Espera unos minutos.';
-      } else if (otpError.message.includes('disabled')) {
-        errorDiv.textContent = 'El login por email está deshabilitado. Contacta al administrador.';
-      } else {
-        errorDiv.textContent = 'Error enviando el código: ' + otpError.message;
-      }
-      errorDiv.className = 'error';
-      return;
-    }
-    
-    // ==================== PASO 4: MOSTRAR INTERFAZ PARA OTP ====================
-    errorDiv.innerHTML = '✅ <strong>Contraseña correcta!</strong><br>📧 <strong>Código enviado!</strong> Revisa tu correo.';
-    errorDiv.className = 'success';
-    
-    // Guardar email y sesión temporal para usar después
-    sessionStorage.setItem('admin_email_temp', email);
-    sessionStorage.setItem('admin_auth_temp', JSON.stringify(authData));
-    
-    // Mostrar campo para ingresar OTP
-    mostrarCampoOTP();
-    
-  } catch (error) {
-    console.error('Error inesperado en login:', error);
-    errorDiv.textContent = 'Error inesperado al iniciar sesión';
-    errorDiv.className = 'error';
-    
-    // Limpiar todo en caso de error
-    await supabase.auth.signOut().catch(() => {});
-    limpiarStorageTemporal();
-  }
-}
-
-// ==================== FUNCIÓN PARA VERIFICAR OTP ====================
-async function verificarOTP() {
-  const email = sessionStorage.getItem('admin_email_temp');
-  const otpCode = document.getElementById('otp-code').value.trim();
-  const errorDiv = document.getElementById('admin-error');
-  
-  errorDiv.textContent = '';
-  errorDiv.className = '';
-  
-  if (!email) {
-    errorDiv.textContent = '❌ Error: Sesión expirada. Vuelve a intentar.';
-    errorDiv.className = 'error';
-    cancelarOTP();
-    return;
-  }
-  
-  if (!otpCode || otpCode.length !== 6) {
-    errorDiv.textContent = 'Ingresa un código de 6 dígitos válido';
-    errorDiv.className = 'error';
-    document.getElementById('otp-code').focus();
-    return;
-  }
-  
-  // VERIFICAR NUEVAMENTE SI HAY SESIÓN ACTIVA (doble check)
-  const estadoSesion = await verificarSesionActiva(email);
-  if (estadoSesion === 'ocupado_por_otro') {
-    errorDiv.textContent = '❌ Ya hay una sesión activa. No puedes iniciar sesión hasta que se cierre.';
-    errorDiv.className = 'error';
-    cancelarOTP();
-    return;
-  }
-  
-  try {
-    errorDiv.textContent = '🔐 Verificando código...';
-    errorDiv.className = 'info';
-    
-    // Verificar OTP
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: email,
-      token: otpCode.trim(),
-      type: 'email'
-    });
-    
-    if (error) {
-      console.error('Error verificando OTP:', error);
-      
-      if (error.message.includes('token has expired')) {
-        errorDiv.textContent = 'El código ha expirado. Solicita uno nuevo.';
-      } else if (error.message.includes('invalid')) {
-        errorDiv.textContent = 'Código incorrecto. Intenta de nuevo.';
-      } else {
-        errorDiv.textContent = 'Error verificando código: ' + error.message;
-      }
-      errorDiv.className = 'error';
-      
-      // Dar otra oportunidad
-      document.getElementById('otp-code').value = '';
-      document.getElementById('otp-code').focus();
-      return;
-    }
-    
-    console.log('✅ OTP CORRECTO - Login completo exitoso');
-    
-    // Limpiar timeout de OTP
-    clearTimeout(otpTimeout);
-    
-    // ==================== REGISTRAR SESIÓN ACTIVA ====================
-    const sessionToken = generateSessionToken();
-    await actualizarSesionActiva(
-      data.user.id, 
-      true, 
-      data.user.email,
-      sessionToken
-    );
-    
-    // ==================== CONFIGURAR SESIÓN COMPLETA ====================
-    adminSession = data.session;
-    sesionActiva = true;
-    
-    // ==================== LIMPIAR TEMPORALES ====================
-    sessionStorage.removeItem('admin_email_temp');
-    sessionStorage.removeItem('admin_auth_temp');
-    
-    // ==================== MOSTRAR PANEL ADMIN ====================
-    document.getElementById('admin-email-display').textContent = data.user.email;
-    await mostrarPanelAdminOTP(sessionToken);
-    
-    // ==================== INICIAR DETECTOR DE INACTIVIDAD ====================
-    iniciarDetectorActividad();
-    resetInactivityTimer();
-    
-  } catch (error) {
-    console.error('Error inesperado verificando OTP:', error);
-    
-    // Limpiar timeout
-    clearTimeout(otpTimeout);
-    
-    // Determinar tipo de error
-    if (error.message?.includes('network') || error.message?.includes('fetch')) {
-      errorDiv.textContent = '🌐 Error de conexión. Verifica tu internet.';
-    } else {
-      errorDiv.textContent = '❌ Error inesperado al verificar código';
-    }
-    
-    errorDiv.className = 'error';
-    
-    // Limpiar en caso de error
-    sessionStorage.removeItem('admin_email_temp');
-    sessionStorage.removeItem('admin_auth_temp');
-    
-    // Auto-cancelar después de 3 segundos
-    setTimeout(() => {
-      if (!sesionActiva) {
-        cancelarOTP();
-      }
-    }, 3000);
-  }
-}
-
-// Limpiar storage temporal
-function limpiarStorageTemporal() {
-  sessionStorage.removeItem('admin_email_temp');
-  sessionStorage.removeItem('admin_auth_temp');
-  
-  // Limpiar timeout OTP
-  clearTimeout(otpTimeout);
-  
-  // Limpiar tokens temporales de Supabase
-  const keysToRemove = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && key.includes('sb-')) {
-      keysToRemove.push(key);
-    }
-  }
-  
-  keysToRemove.forEach(key => localStorage.removeItem(key));
-}
-
-// Mostrar campo OTP (modificado)
-function mostrarCampoOTP() {
-  const loginForm = document.getElementById('admin-login');
-  const email = sessionStorage.getItem('admin_email_temp') || '';
-  
-  const otpHTML = `
-    <div id="otp-container" style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 20px;">
-      <div style="background: #e8f4fd; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
-        <strong>✅ Contraseña verificada</strong><br>
-        <small>Se envió un código a: ${email}</small>
-      </div>
-      
-      <div class="form-group">
-        <label for="otp-code">Código de 6 dígitos:</label>
-        <input type="text" id="otp-code" maxlength="6" placeholder="123456" 
-               style="letter-spacing: 10px; text-align: center; font-size: 24px; width: 200px;"
-               oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6)">
-        <small>Ingresa el código enviado a tu email</small>
-      </div>
-      
-      <div style="margin-top: 15px;">
-        <button onclick="verificarOTP()" class="btn-primary" style="padding: 10px 20px;">
-          ✅ Verificar Código
-        </button>
-        <button onclick="reenviarOTP()" class="btn-secondary" style="margin-left: 10px; padding: 10px 20px;">
-          🔄 Reenviar código
-        </button>
-        <button onclick="cancelarOTP()" class="btn-secondary" style="margin-left: 10px; padding: 10px 20px;">
-          ↩️ Volver a intentar
-        </button>
-      </div>
-      
-      <div style="margin-top: 10px; font-size: 12px; color: #666;">
-        <small>⚠️ El código expira en 10 minutos</small>
-      </div>
-    </div>
-  `;
-  
-  // Si ya existe el contenedor OTP, reemplazarlo
-  const existingOtp = document.getElementById('otp-container');
-  if (existingOtp) {
-    existingOtp.outerHTML = otpHTML;
-  } else {
-    loginForm.insertAdjacentHTML('beforeend', otpHTML);
-  }
-  
-  // Ocultar campos de contraseña
-  document.getElementById('admin-password').parentElement.style.display = 'none';
-  document.querySelector('button[onclick="loginAdmin()"]').style.display = 'none';
-  
-  // Configurar timeout automático para OTP
-  clearTimeout(otpTimeout);
-  otpTimeout = setTimeout(() => {
-    if (document.getElementById('otp-container') && !sesionActiva) {
-      const errorDiv = document.getElementById('admin-error');
-      errorDiv.innerHTML = '⏰ <strong>Código expirado</strong><br>El código OTP ha expirado. Vuelve a intentar.';
-      errorDiv.className = 'error';
-      cancelarOTP();
-    }
-  }, OTP_TIMEOUT);
-  
-  document.getElementById('otp-code').focus();
-}
-
-// Cancelar OTP (modificado)
-function cancelarOTP() {
-  // Limpiar timeout
-  clearTimeout(otpTimeout);
-  
-  // Limpiar todo
-  sessionStorage.removeItem('admin_email_temp');
-  sessionStorage.removeItem('admin_auth_temp');
-  
-  // Cerrar cualquier sesión temporal
-  supabase.auth.signOut().catch(() => {});
-  limpiarStorageTemporal();
-  
-  // Remover campo OTP
-  const otpContainer = document.getElementById('otp-container');
-  if (otpContainer) otpContainer.remove();
-  
-  // Restaurar campos de contraseña
-  document.getElementById('admin-password').parentElement.style.display = 'block';
-  document.querySelector('button[onclick="loginAdmin()"]').style.display = 'block';
-  
-  // Limpiar campos
-  document.getElementById('admin-password').value = '';
-  document.getElementById('admin-error').textContent = '';
-  
-  // Enfocar en contraseña
-  document.getElementById('admin-password').focus();
-}
-
-// Función para reenviar OTP
-async function reenviarOTP() {
-  const email = sessionStorage.getItem('admin_email_temp');
-  const errorDiv = document.getElementById('admin-error');
-  
-  if (!email) {
-    errorDiv.textContent = '❌ Error: Email no encontrado';
-    errorDiv.className = 'error';
-    return;
-  }
-  
-  try {
-    errorDiv.textContent = '🔄 Reenviando código...';
-    errorDiv.className = 'info';
-    
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email,
-      options: { shouldCreateUser: false }
-    });
-    
-    if (error) {
-      errorDiv.textContent = 'Error reenviando código: ' + error.message;
-      errorDiv.className = 'error';
-      return;
-    }
-    
-    // Reiniciar timeout
-    clearTimeout(otpTimeout);
-    otpTimeout = setTimeout(() => {
-      if (document.getElementById('otp-container') && !sesionActiva) {
-        const errorDiv = document.getElementById('admin-error');
-        errorDiv.innerHTML = '⏰ <strong>Código expirado</strong><br>El código OTP ha expirado. Vuelve a intentar.';
-        errorDiv.className = 'error';
-        cancelarOTP();
-      }
-    }, OTP_TIMEOUT);
-    
-    errorDiv.innerHTML = '✅ <strong>Código reenviado!</strong> Revisa tu correo.';
-    errorDiv.className = 'success';
-    
-  } catch (error) {
-    console.error('Error reenviando OTP:', error);
-    errorDiv.textContent = 'Error reenviando código';
-    errorDiv.className = 'error';
-  }
-}
-
-// Generar token único para sesión
-function generateSessionToken() {
-  return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-}
-
-// Función para mostrar panel admin con OTP y token
-async function mostrarPanelAdminOTP(sessionToken) {
-  document.getElementById('admin-login').classList.add('oculto');
-  document.getElementById('admin-panel').classList.remove('oculto');
-  
-  // Mostrar estado de sesión única
-  const sessionInfo = document.createElement('div');
-  sessionInfo.id = 'session-info';
-  sessionInfo.style.margin = '10px 0';
-  sessionInfo.style.padding = '10px';
-  sessionInfo.style.borderRadius = '5px';
-  sessionInfo.style.fontSize = '14px';
-  sessionInfo.style.background = '#d4edda';
-  sessionInfo.style.color = '#155724';
-  sessionInfo.style.border = '1px solid #c3e6cb';
-  sessionInfo.innerHTML = `
-    ✅ <strong>SESIÓN ÚNICA ACTIVA</strong><br>
-    <small>Token: ${sessionToken?.substring(0, 20)}...</small><br>
-    <small>Solo tú puedes acceder hasta que cierres sesión.</small>
-  `;
-  
-  const panel = document.getElementById('admin-panel');
-  const firstElement = panel.querySelector('h2').nextElementSibling;
-  if (firstElement) {
-    panel.insertBefore(sessionInfo, firstElement.nextSibling);
-  }
-  
-  // Agregar botón de cerrar sesión prominente
-  const cerrarBtn = document.createElement('button');
-  cerrarBtn.textContent = '🔒 Cerrar Sesión (Liberar Panel)';
-  cerrarBtn.className = 'btn-danger';
-  cerrarBtn.style.margin = '10px 0';
-  cerrarBtn.style.padding = '10px 20px';
-  cerrarBtn.style.fontSize = '16px';
-  cerrarBtn.onclick = cerrarSesionAdmin;
-  
-  if (firstElement) {
-    panel.insertBefore(cerrarBtn, firstElement.nextSibling.nextSibling);
-  }
-  
-  // Cargar datos del panel
-  await cargarPanelAdmin();
-}
-
-// ==================== FUNCIÓN PARA FORZAR CIERRE DE SESIÓN ====================
-async function forzarCerrarSesionRemota() {
-  if (!confirm('⚠️ ¿Forzar cierre de todas las sesiones?\n\nEsto cerrará la sesión en todos los dispositivos.')) {
-    return;
-  }
-  
-  try {
-    // 1. Limpiar sesión activa en la base de datos
-    await supabase
-      .from('sesiones_activas')
-      .update({ 
-        activa: false,
-        session_token: null,
-        ultima_actividad: new Date().toISOString()
-      })
-      .eq('tipo', 'admin');
-    
-    // 2. Cerrar sesión en Supabase Auth
-    await supabase.auth.signOut();
-    
-    alert('✅ Sesiones remotas cerradas. Ahora puedes iniciar sesión.');
-    
-    // 3. Recargar para limpiar estado
-    location.reload();
-    
-  } catch (error) {
-    console.error('Error forzando cierre:', error);
-    alert('❌ Error al forzar cierre de sesión');
-  }
-}
-
-// ==================== FUNCIÓN PARA RECUPERAR PASSWORD ====================
-async function recuperarPasswordAdmin() {
-  const email = ADMIN_EMAIL;
-  
-  if (!confirm(`¿Enviar enlace de recuperación a ${email}?`)) {
-    return;
-  }
-  
-  try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password.html`,
-    });
-    
-    if (error) throw error;
-    
-    alert('✅ Enlace de recuperación enviado a tu email');
-    
-  } catch (error) {
-    console.error('Error recuperando password:', error);
-    alert('❌ Error enviando enlace de recuperación');
-  }
-}
-
-// ==================== MODIFICAR entrarAdmin() PARA NUEVO FLUJO ====================
+// ==================== FUNCIÓN entrarAdmin ====================
 async function entrarAdmin() {
   const { data: { session } } = await supabase.auth.getSession();
   
@@ -2728,7 +2847,6 @@ async function entrarAdmin() {
     }
     
     // Tiene sesión de password pero no completó 2FA
-    // O la sesión 2FA expiró
     await supabase.auth.signOut();
   }
   
@@ -2736,127 +2854,47 @@ async function entrarAdmin() {
   mostrarVentana('admin-login');
   
   // Resetear formulario
-  cancelarOTP(); // Esto limpiará todo
+  cancelarOTP();
   document.getElementById('admin-error').textContent = '';
 }
 
-// Función para cerrar sesión (MEJORADA)
-async function cerrarSesionAdmin() {
-  try {
-    // Limpiar sesión activa
-    await actualizarSesionActiva(null, false);
-    
-    // Cerrar sesión en Supabase
-    const { error } = await supabase.auth.signOut();
-    if (error) console.error('Error cerrando sesión:', error);
-    
-    // Limpiar variables
-    adminSession = null;
-    sesionActiva = false;
-    clearTimeout(inactivityTimer);
-    clearTimeout(otpTimeout);
-    
-    // Limpiar formulario
-    document.getElementById('admin-email').value = '';
-    document.getElementById('admin-password').value = '';
-    document.getElementById('admin-error').textContent = '';
-    
-    // Limpiar storage temporal
-    limpiarStorageTemporal();
-    
-    // Volver a login
-    mostrarVentana('admin-login');
-    
-  } catch (error) {
-    console.error('Error en cerrarSesionAdmin:', error);
-  }
-}
-
-// Verificar sesión al cargar la página
-async function verificarSesionInicial() {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session && session.user.email === ADMIN_EMAIL) {
-      const haySesionActiva = await verificarSesionActiva();
-      if (haySesionActiva) {
-        const { data: sesionData } = await supabase
-          .from('sesiones_activas')
-          .select('user_id')
-          .eq('tipo', 'admin')
-          .single();
-          
-        if (sesionData?.user_id === session.user.id) {
-          // Sesión válida
-          adminSession = session;
-          sesionActiva = true;
-          document.getElementById('admin-email-display').textContent = session.user.email;
-          iniciarDetectorActividad();
-          resetInactivityTimer();
-        } else {
-          // Otra sesión está activa
-          await cerrarSesionAdmin();
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Error verificando sesión inicial:', error);
-  }
-}
-
-// Timer de inactividad
-
-function resetInactivityTimer() {
-  clearTimeout(inactivityTimer);
-  if (sesionActiva) {
-    console.log('⏰ Reiniciando timer de inactividad (30 minutos)');
-    inactivityTimer = setTimeout(async () => {
-      if (sesionActiva) {
-        console.log('⏰ Sesión expirada por inactividad');
-        alert('Sesión expirada por inactividad (30 minutos)');
-        await cerrarSesionAdmin();
-      }
-    }, SESSION_TIMEOUT); // 30 minutos
-  }
-}
-
-// Eventos para detectar actividad
-function iniciarDetectorActividad() {
-  ['click', 'mousemove', 'keypress', 'scroll'].forEach(event => {
-    document.addEventListener(event, () => {
-      if (sesionActiva) {
-        actualizarActividadSesion();
-        resetInactivityTimer();
-      }
-    });
-  });
-}
-
-// Función auxiliar para probar OTP
-async function probarOTP() {
-  const { error } = await supabase.auth.signInWithOtp({
-    email: ADMIN_EMAIL,
-    options: { shouldCreateUser: false }
-  });
+// ==================== FUNCIÓN PARA RECUPERAR PASSWORD ====================
+async function recuperarPasswordAdmin() {
+  const email = ADMIN_EMAIL;
   
-  if (error) {
-    console.error('Error prueba OTP:', error);
-    alert('Error: ' + error.message);
-  } else {
-    alert('✅ Código OTP enviado. Revisa tu correo.');
+  if (!confirm(`¿Enviar enlace de recuperación a ${email}?`)) {
+    return;
+  }
+  
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password.html`,
+    });
+    
+    if (error) throw error;
+    
+    alert('✅ Enlace de recuperación enviado a tu email');
+    
+  } catch (error) {
+    console.error('Error recuperando password:', error);
+    alert('❌ Error enviando enlace de recuperación');
   }
 }
 
-// ==================== AGREGAR BOTONES ADICIONALES EN EL HTML ====================
+// ==================== AGREGAR BOTONES ADICIONALES ====================
 function agregarBotonesAdicionalesAdmin() {
   const loginSection = document.getElementById('admin-login');
   if (!loginSection) return;
   
-  // Verificar si ya existen los botones
   if (!document.getElementById('botones-adicionales-admin')) {
     const botonesHTML = `
       <div id="botones-adicionales-admin" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #eee;">
-        
+        <button onclick="forzarCerrarSesionRemota()" style="background: #ff6b6b; color: white; padding: 8px 12px; border: none; border-radius: 4px; margin-right: 10px;">
+          🔓 Forzar cierre remoto
+        </button>
+        <button onclick="recuperarPasswordAdmin()" style="background: #6c5ce7; color: white; padding: 8px 12px; border: none; border-radius: 4px;">
+          🔑 Recuperar contraseña
+        </button>
       </div>
     `;
     
@@ -2864,52 +2902,7 @@ function agregarBotonesAdicionalesAdmin() {
   }
 }
 
-// Estilos CSS adicionales (se pueden agregar al CSS principal)
-const style = document.createElement('style');
-style.textContent = `
-  .error {
-    color: #721c24;
-    background-color: #f8d7da;
-    border: 1px solid #f5c6cb;
-    padding: 10px;
-    border-radius: 5px;
-    margin: 10px 0;
-  }
-  
-  .success {
-    color: #155724;
-    background-color: #d4edda;
-    border: 1px solid #c3e6cb;
-    padding: 10px;
-    border-radius: 5px;
-    margin: 10px 0;
-  }
-  
-  .info {
-    color: #0c5460;
-    background-color: #d1ecf1;
-    border: 1px solid #bee5eb;
-    padding: 10px;
-    border-radius: 5px;
-    margin: 10px 0;
-  }
-  
-  .btn-danger {
-    background-color: #dc3545;
-    color: white;
-    border: none;
-    padding: 8px 15px;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  
-  .btn-danger:hover {
-    background-color: #c82333;
-  }
-`;
-document.head.appendChild(style);
-
-// Exportar funciones al scope global
+// ==================== EXPORTAR FUNCIONES ====================
 window.mostrarVentana = mostrarVentana;
 window.guardarDatosInscripcion = guardarDatosInscripcion;
 window.confirmarCantidad = confirmarCantidad;
@@ -2932,11 +2925,10 @@ window.ordenarPorCedula = ordenarPorCedula;
 window.ordenarPorReferencia = ordenarPorReferencia;
 window.activarCohetes = activarCohetes;
 window.mostrarSeccion = mostrarSeccion;
-window.probarOTP = probarOTP;
 window.verificarOTP = verificarOTP;
 window.cancelarOTP = cancelarOTP;
 window.reenviarOTP = reenviarOTP;
 window.forzarCerrarSesionRemota = forzarCerrarSesionRemota;
 window.recuperarPasswordAdmin = recuperarPasswordAdmin;
 
-console.log('✅ Todas las funciones han sido cargadas correctamente');
+console.log('✅ Sistema de sesión única configurado correctamente');
