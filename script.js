@@ -89,6 +89,79 @@ async function crearTablaSesiones() {
   }
 }
 
+// ==================== NUEVA: VERIFICACIÓN SESIÓN ÚNICA POR USUARIO ====================
+// Función para verificar si el usuario YA tiene sesión activa (en cualquier navegador)
+async function verificarSesionUsuarioActiva(emailUsuario) {
+  try {
+    const { data: sesionData, error } = await supabase
+      .from('sesiones_activas')
+      .select('*')
+      .eq('tipo', 'admin')
+      .single();
+    
+    if (error || !sesionData) return false;
+    
+    // Si hay sesión activa y es del MISMO usuario
+    if (sesionData.activa && sesionData.user_email === emailUsuario) {
+      return {
+        mismoUsuario: true,
+        data: sesionData,
+        mensaje: `Ya tienes una sesión activa iniciada el ${new Date(sesionData.login_timestamp).toLocaleString()}`
+      };
+    }
+    
+    // Si hay sesión activa pero de OTRO usuario
+    if (sesionData.activa && sesionData.user_email !== emailUsuario) {
+      return {
+        mismoUsuario: false,
+        data: sesionData,
+        mensaje: `El usuario ${sesionData.user_email} tiene sesión activa`
+      };
+    }
+    
+    return false;
+    
+  } catch (error) {
+    console.error('Error verificando sesión usuario:', error);
+    return false;
+  }
+}
+
+// Función para mostrar alerta de sesión duplicada
+function mostrarAlertaSesionDuplicada() {
+  // Crear overlay bloqueante
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+  `;
+  
+  const alerta = document.createElement('div');
+  alerta.style.cssText = `
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+  `;
+  
+  
+  overlay.appendChild(alerta);
+  document.body.appendChild(overlay);
+}
+
+// ==================== FIN NUEVAS FUNCIONES ====================
+
 // Función para verificar sesión activa
 async function verificarSesionActiva(userEmail = null) {
   console.log('🔍 Verificando sesión activa para:', userEmail || 'cualquiera');
@@ -251,6 +324,43 @@ async function loginAdmin() {
     errorDiv.className = 'error';
     return;
   }
+  
+  // ========== NUEVA VERIFICACIÓN: BLOQUEAR SEGUNDA SESIÓN ==========
+  const sesionUsuario = await verificarSesionUsuarioActiva(email);
+  
+  if (sesionUsuario) {
+    if (sesionUsuario.mismoUsuario) {
+      // Mismo usuario intentando segunda sesión
+      const tiempoLogin = new Date(sesionUsuario.data.login_timestamp);
+      const ahora = new Date();
+      const minutosActivo = Math.floor((ahora - tiempoLogin) / (1000 * 60));
+      
+      errorDiv.innerHTML = `
+        <div style="background:#fff3cd;border:1px solid #ffeaa7;padding:15px;border-radius:5px;color:#856404;">
+          ⚠️ <strong>YA TIENES UNA SESIÓN ABIERTA</strong><br><br>
+          📅 <strong>Iniciada:</strong> ${tiempoLogin.toLocaleString()}<br>
+          ⏱️ <strong>Hace:</strong> ${minutosActivo} minutos<br><br>
+          <strong>Opciones:</strong><br>
+          1️⃣ <strong>Cerrar sesión en la otra pestaña/navegador</strong><br>
+          2️⃣ <strong>Esperar 30 minutos de inactividad</strong><br>
+          
+        </div>
+      `;
+      return;
+    } else {
+      // Otro usuario tiene sesión
+      errorDiv.innerHTML = `
+        <div style="background:#f8d7da;border:1px solid #f5c6cb;padding:15px;border-radius:5px;color:#721c24;">
+          🚫 <strong>PANEL ADMIN OCUPADO</strong><br><br>
+          El usuario <strong>${sesionUsuario.data.user_email}</strong><br>
+          tiene sesión activa desde:<br>
+          <strong>${new Date(sesionUsuario.data.login_timestamp).toLocaleString()}</strong>
+        </div>
+      `;
+      return;
+    }
+  }
+  // ========== FIN NUEVA VERIFICACIÓN ==========
   
   try {
     errorDiv.textContent = '🔐 Verificando contraseña...';
@@ -415,6 +525,7 @@ async function loginAdmin() {
     limpiarStorageTemporal();
   }
 }
+
 // Función para verificar OTP
 async function verificarOTP() {
   const email = sessionStorage.getItem('admin_email_temp');
@@ -510,6 +621,9 @@ async function verificarOTP() {
     iniciarDetectorActividad();
     resetInactivityTimer();
     
+    // ========== PASO 6: INICIAR VERIFICACIÓN PERIÓDICA ==========
+    iniciarVerificacionPeriodicaSesion();
+    
   } catch (error) {
     console.error('❌ Error en verificarOTP:', error);
     
@@ -532,6 +646,32 @@ async function verificarOTP() {
       if (!sesionActiva) cancelarOTP();
     }, 3000);
   }
+}
+
+// Función para verificación periódica de sesión
+let verificacionInterval = null;
+function iniciarVerificacionPeriodicaSesion() {
+  if (verificacionInterval) {
+    clearInterval(verificacionInterval);
+  }
+  
+  verificacionInterval = setInterval(async () => {
+    if (!sesionActiva || !adminSession) return;
+    
+    try {
+      const sesionUsuario = await verificarSesionUsuarioActiva(ADMIN_EMAIL);
+      
+      if (sesionUsuario && !sesionUsuario.mismoUsuario) {
+        // Otro usuario tomó la sesión
+        console.log('🚫 Sesión tomada por otro usuario');
+        mostrarAlertaSesionDuplicada();
+        await cerrarSesionAdmin();
+        clearInterval(verificacionInterval);
+      }
+    } catch (error) {
+      console.error('Error en verificación periódica:', error);
+    }
+  }, 30000); // Verificar cada 30 segundos
 }
 
 // Mostrar campo OTP
@@ -704,6 +844,12 @@ async function cerrarSesionAdmin() {
   console.log('👋 Cerrando sesión admin...');
   
   try {
+    // Detener verificación periódica
+    if (verificacionInterval) {
+      clearInterval(verificacionInterval);
+      verificacionInterval = null;
+    }
+    
     // Limpiar sesión activa
     await actualizarSesionActiva(null, false);
     
@@ -819,6 +965,9 @@ async function verificarSesionInicial() {
         document.getElementById('admin-login').classList.add('oculto');
         document.getElementById('admin-panel').classList.remove('oculto');
         await cargarPanelAdmin();
+        
+        // Iniciar verificación periódica
+        iniciarVerificacionPeriodicaSesion();
       } else {
         console.log('⚠️ Sesión no activa en BD, cerrando');
         await cerrarSesionAdmin();
@@ -2842,6 +2991,7 @@ async function entrarAdmin() {
         await mostrarPanelAdminOTP(sesionData.session_token);
         iniciarDetectorActividad();
         resetInactivityTimer();
+        iniciarVerificacionPeriodicaSesion();
         return;
       }
     }
