@@ -1994,43 +1994,73 @@ async function subirCartones() {
 }
 
 async function borrarCartones() {
-  const claveCorrecta = "1234admin";
+  // Obtener la clave desde Supabase
+  const { data: claveData, error: claveError } = await supabase
+    .from('configuracion')
+    .select('valore')
+    .eq('clave', 'clave_borrar_cartones')
+    .single();
+
+  if (claveError || !claveData) {
+    alert("Error al obtener la clave de seguridad. Contacta al administrador.");
+    console.error('Error obteniendo clave:', claveError);
+    return;
+  }
+
+  const claveCorrecta = claveData.valore;
   const claveIngresada = prompt("Ingrese la clave de seguridad para borrar todos los cartones:");
 
-  if (claveIngresada !== claveCorrecta) {
+  if (!claveIngresada) {
+    alert("Operación cancelada.");
+    return;
+  }
+
+  if (claveIngresada.trim() !== claveCorrecta.trim()) {
     alert("Clave incorrecta. No se borraron los cartones.");
     return;
   }
 
+  // Confirmación adicional
+  if (!confirm("⚠️ ¿ESTÁS ABSOLUTAMENTE SEGURO?\n\nEsta acción borrará TODAS las imágenes de cartones.\n\nEsto NO se puede deshacer.")) {
+    alert("Operación cancelada.");
+    return;
+  }
+
   const status = document.getElementById('deleteStatus');
-  status.innerHTML = 'Cargando lista de imágenes...';
+  status.innerHTML = '<p style="color:blue;">Cargando lista de imágenes...</p>';
 
-  const { data: list, error: listError } = await supabase.storage
-    .from('cartones')
-    .list('', { limit: 1000 });
+  try {
+    // Paso 1: Obtener la lista de imágenes
+    const { data: list, error: listError } = await supabase.storage
+      .from('cartones')
+      .list('', { limit: 1000 });
 
-  if (listError) {
-    status.innerHTML = `<p style="color:red;">Error listando imágenes: ${listError.message}</p>`;
-    return;
+    if (listError) throw listError;
+
+    if (!list || list.length === 0) {
+      status.innerHTML = '<p style="color:orange;">No hay imágenes para borrar.</p>';
+      setTimeout(() => { status.innerHTML = ''; }, 3000);
+      return;
+    }
+
+    // Paso 2: Borrar
+    const fileNames = list.map(file => file.name);
+    const { error: deleteError } = await supabase.storage
+      .from('cartones')
+      .remove(fileNames);
+
+    if (deleteError) throw deleteError;
+
+    status.innerHTML = `<p style="color:green;">✅ Se borraron ${fileNames.length} imágenes exitosamente.</p>`;
+    
+  } catch (error) {
+    console.error('Error borrando cartones:', error);
+    status.innerHTML = `<p style="color:red;">❌ Error al borrar imágenes: ${error.message}</p>`;
   }
 
-  if (!list.length) {
-    status.innerHTML = '<p style="color:orange;">No hay imágenes para borrar.</p>';
-    return;
-  }
-
-  const fileNames = list.map(file => file.name);
-  const { error: deleteError } = await supabase.storage
-    .from('cartones')
-    .remove(fileNames);
-
-  if (deleteError) {
-    status.innerHTML = `<p style="color:red;">Error al borrar imágenes: ${deleteError.message}</p>`;
-  } else {
-    status.innerHTML = `<p style="color:green;">Se borraron ${fileNames.length} imágenes exitosamente.</p>`;
-  }
-
-  setTimeout(() => { status.innerHTML = ''; }, 5000);
+  setTimeout(() => {
+    status.innerHTML = '';
+  }, 5000);
 }
 
 // ==================== INICIALIZACIÓN ====================
