@@ -2,7 +2,6 @@ const supabaseUrl = 'https://dbkixcpwirjwjvjintkr.supabase.co';
 const supabase = window.supabase.createClient(supabaseUrl, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho');
 
 // Configuración del admin
-const ADMIN_EMAIL = 'bingoandino75@gmail.com';
 
 // Variables globales
 let cartonesOcupados = [];
@@ -118,38 +117,43 @@ async function crearTablaSesiones() {
 
 // ==================== NUEVA: VERIFICACIÓN SESIÓN ÚNICA POR USUARIO ====================
 // Función para verificar si el usuario YA tiene sesión activa (en cualquier navegador)
-async function verificarSesionUsuarioActiva(emailUsuario) {
-  try {
-    const { data: sesionData, error } = await supabase
-      .from('sesiones_activas')
-      .select('*')
-      .eq('tipo', 'admin')
-      .single();
-    
-    if (error || !sesionData) return false;
-    
-    // Si hay sesión activa y es del MISMO usuario
-    if (sesionData.activa && sesionData.user_email === emailUsuario) {
-      return {
-        mismoUsuario: true,
-        data: sesionData,
-        mensaje: `Ya tienes una sesión activa iniciada el ${new Date(sesionData.login_timestamp).toLocaleString()}`
-      };
-    }
-    
-    // Si hay sesión activa pero de OTRO usuario
-    if (sesionData.activa && sesionData.user_email !== emailUsuario) {
-      return {
-        mismoUsuario: false,
-        data: sesionData,
-        mensaje: `El usuario ${sesionData.user_email} tiene sesión activa`
-      };
-    }
-    
+async function verificarSesionAdmin() {
+  const sessionToken = sessionStorage.getItem('admin_session_token');
+  
+  if (!sessionToken) {
+    console.log('❌ No hay token de sesión');
     return false;
+  }
+  
+  try {
+    const response = await fetch(
+      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/verify-session',
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({ sessionToken })
+      }
+    );
+    
+    if (!response.ok) {
+      // Si hay error HTTP, la sesión no es válida
+      return false;
+    }
+    
+    const result = await response.json();
+    
+    // Actualizar expiration en sessionStorage si viene
+    if (result.expiresAt) {
+      sessionStorage.setItem('session_expires', result.expiresAt);
+    }
+    
+    return result.valid === true;
     
   } catch (error) {
-    console.error('Error verificando sesión usuario:', error);
+    console.error('❌ Error verificando sesión:', error);
     return false;
   }
 }
@@ -189,110 +193,6 @@ function mostrarAlertaSesionDuplicada() {
 
 // ==================== FIN NUEVAS FUNCIONES ====================
 
-// Función para verificar sesión activa
-async function verificarSesionActiva(userEmail = null) {
-  console.log('🔍 Verificando sesión activa para:', userEmail || 'cualquiera');
-  
-  try {
-    const { data: sesionData, error } = await supabase
-      .from('sesiones_activas')
-      .select('*')
-      .eq('tipo', 'admin')
-      .single();
-      
-    if (error) {
-      console.log('❌ Error obteniendo sesión:', error.message);
-      
-      // Si no existe la fila, crearla
-      if (error.code === 'PGRST116' || error.message.includes('No rows')) {
-        console.log('📝 Creando registro de sesión inicial...');
-        await crearTablaSesiones();
-        return false;
-      }
-      return false;
-    }
-    
-    console.log('📊 Datos de sesión:', sesionData);
-    
-    if (!sesionData || !sesionData.activa) {
-      console.log('ℹ️ No hay sesión activa');
-      return false;
-    }
-    
-    // Verificar que la sesión no haya expirado
-    const ultimaActividad = new Date(sesionData.ultima_actividad);
-    const ahora = new Date();
-    const minutosDesdeUltimaActividad = (ahora - ultimaActividad) / (1000 * 60);
-    
-    console.log(`⏰ Minutos desde última actividad: ${Math.floor(minutosDesdeUltimaActividad)}`);
-    
-    // Si pasaron más de 30 minutos, considerar expirada
-    if (minutosDesdeUltimaActividad > 30) {
-      console.log('⚠️ Sesión expirada por inactividad');
-      await actualizarSesionActiva(null, false, null, null);
-      return false;
-    }
-    
-    // Si se proporciona email, verificar si es el mismo usuario
-    if (userEmail && sesionData.user_email !== userEmail) {
-      console.log(`🚫 Sesión ocupada por otro: ${sesionData.user_email}`);
-      return 'ocupado_por_otro';
-    }
-    
-    console.log('✅ Sesión activa válida');
-    return true;
-  } catch (error) {
-    console.error('❌ Error en verificarSesionActiva:', error);
-    return false;
-  }
-}
-
-// Función para actualizar sesión activa
-async function actualizarSesionActiva(userId, activa, userEmail = null, sessionToken = null) {
-  console.log('🔄 Actualizando sesión:', { activa, userEmail });
-  
-  try {
-    const updateData = {
-      tipo: 'admin',
-      user_id: userId,
-      user_email: userEmail,
-      session_token: sessionToken,
-      activa: activa,
-      ultima_actividad: new Date().toISOString(),
-      login_timestamp: activa ? new Date().toISOString() : null
-    };
-    
-    const { error } = await supabase
-      .from('sesiones_activas')
-      .upsert(updateData, { onConflict: 'tipo' });
-      
-    if (error) {
-      console.error('❌ Error actualizando sesión:', error);
-      return false;
-    }
-    
-    console.log('✅ Sesión actualizada correctamente');
-    return true;
-  } catch (error) {
-    console.error('❌ Error en actualizarSesionActiva:', error);
-    return false;
-  }
-}
-
-// Función para actualizar actividad
-async function actualizarActividadSesion() {
-  if (sesionActiva) {
-    try {
-      await supabase
-        .from('sesiones_activas')
-        .update({ ultima_actividad: new Date().toISOString() })
-        .eq('tipo', 'admin');
-    } catch (error) {
-      console.error('Error actualizando actividad:', error);
-    }
-  }
-}
-
 // Función para forzar cierre remoto
 async function forzarCerrarSesionRemota() {
   if (!confirm('⚠️ ¿Forzar cierre de todas las sesiones?\n\nEsto cerrará la sesión en TODOS los dispositivos.')) {
@@ -300,30 +200,36 @@ async function forzarCerrarSesionRemota() {
   }
   
   try {
-    // 1. Limpiar sesión activa en la base de datos
-    const { error: updateError } = await supabase
-      .from('sesiones_activas')
-      .update({ 
-        activa: false,
-        session_token: null,
-        user_id: null,
-        user_email: null,
-        ultima_actividad: new Date().toISOString()
-      })
-      .eq('tipo', 'admin');
+    const sessionToken = sessionStorage.getItem('admin_session_token');
     
-    if (updateError) {
-      console.error('Error actualizando sesión:', updateError);
-      throw updateError;
+    if (!sessionToken) {
+      alert('❌ No tienes sesión activa');
+      return;
     }
     
-    // 2. Cerrar sesión en Supabase Auth localmente
-    await supabase.auth.signOut();
+    const response = await fetch(
+      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/update-session',
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({ 
+          sessionToken,
+          action: "force_logout_all" 
+        })
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error('Error al forzar cierre');
+    }
+    
+    // Limpiar localmente
+    await cerrarSesionAdmin();
     
     alert('✅ Sesiones remotas cerradas. Ahora puedes iniciar sesión.');
-    
-    // 3. Recargar para limpiar estado
-    location.reload();
     
   } catch (error) {
     console.error('❌ Error forzando cierre:', error);
@@ -331,7 +237,69 @@ async function forzarCerrarSesionRemota() {
   }
 }
 
+async function cerrarSesionAdmin() {
+  console.log('👋 Cerrando sesión admin...');
+  
+  try {
+    // Detener verificación periódica
+    if (verificacionInterval) {
+      clearInterval(verificacionInterval);
+      verificacionInterval = null;
+    }
+    
+    // Notificar al backend (si hay token)
+    const sessionToken = sessionStorage.getItem('admin_session_token');
+    if (sessionToken) {
+      try {
+        await fetch(
+          'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/update-session',
+          {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+            },
+            body: JSON.stringify({ 
+              sessionToken,
+              action: "logout" 
+            })
+          }
+        );
+      } catch (e) {
+        console.warn('⚠️ No se pudo notificar al backend del logout:', e);
+      }
+    }
+    
+    // Limpiar variables
+    adminSession = null;
+    sesionActiva = false;
+    clearTimeout(inactivityTimer);
+    
+    // Limpiar sessionStorage
+    sessionStorage.removeItem('admin_session_token');
+    sessionStorage.removeItem('admin_email');
+    sessionStorage.removeItem('session_expires');
+    
+    // Limpiar formulario
+    document.getElementById('admin-email').value = '';
+    document.getElementById('admin-password').value = '';
+    
+    const errorDiv = document.getElementById('admin-error');
+    if (errorDiv) errorDiv.textContent = '';
+    
+    // Volver a login
+    document.getElementById('admin-panel').classList.add('oculto');
+    document.getElementById('admin-login').classList.remove('oculto');
+    
+    console.log('✅ Sesión cerrada correctamente');
+    
+  } catch (error) {
+    console.error('❌ Error en cerrarSesionAdmin:', error);
+    alert('Error al cerrar sesión');
+  }
+}
 // ==================== LOGIN CON DOBLE FACTOR ====================
+// ==================== LOGIN SEGURO CON EDGE FUNCTION ====================
 async function loginAdmin() {
   const email = document.getElementById('admin-email').value.trim();
   const password = document.getElementById('admin-password').value;
@@ -346,213 +314,99 @@ async function loginAdmin() {
     return;
   }
   
-  if (email !== ADMIN_EMAIL) {
-    errorDiv.textContent = 'No tiene permisos de administrador';
-    errorDiv.className = 'error';
-    return;
-  }
-  
-  // ========== NUEVA VERIFICACIÓN: BLOQUEAR SEGUNDA SESIÓN ==========
-  const sesionUsuario = await verificarSesionUsuarioActiva(email);
-  
-  if (sesionUsuario) {
-    if (sesionUsuario.mismoUsuario) {
-      // Mismo usuario intentando segunda sesión
-      const tiempoLogin = new Date(sesionUsuario.data.login_timestamp);
-      const ahora = new Date();
-      const minutosActivo = Math.floor((ahora - tiempoLogin) / (1000 * 60));
-      
-      errorDiv.innerHTML = `
-        <div style="background:#fff3cd;border:1px solid #ffeaa7;padding:15px;border-radius:5px;color:#856404;">
-          ⚠️ <strong>YA TIENES UNA SESIÓN ABIERTA</strong><br><br>
-          📅 <strong>Iniciada:</strong> ${tiempoLogin.toLocaleString()}<br>
-          ⏱️ <strong>Hace:</strong> ${minutosActivo} minutos<br><br>
-          <strong>Opciones:</strong><br>
-          1️⃣ <strong>Cerrar sesión en la otra pestaña/navegador</strong><br>
-          2️⃣ <strong>Esperar 30 minutos de inactividad</strong><br>
-          
-        </div>
-      `;
-      return;
-    } else {
-      // Otro usuario tiene sesión
-      errorDiv.innerHTML = `
-        <div style="background:#f8d7da;border:1px solid #f5c6cb;padding:15px;border-radius:5px;color:#721c24;">
-          🚫 <strong>PANEL ADMIN OCUPADO</strong><br><br>
-          El usuario <strong>${sesionUsuario.data.user_email}</strong><br>
-          tiene sesión activa desde:<br>
-          <strong>${new Date(sesionUsuario.data.login_timestamp).toLocaleString()}</strong>
-        </div>
-      `;
-      return;
-    }
-  }
-  // ========== FIN NUEVA VERIFICACIÓN ==========
-  
   try {
-    errorDiv.textContent = '🔐 Verificando contraseña...';
+    errorDiv.textContent = '🔐 Verificando credenciales...';
     errorDiv.className = 'info';
     
-    // ========== PASO 1: VERIFICAR CONTRASEÑA ==========
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password
-    });
-    
-    if (authError) {
-      console.error('Error auth:', authError);
-      if (authError.message.includes('Invalid login credentials')) {
-        errorDiv.textContent = '❌ Contraseña incorrecta';
-      } else {
-        errorDiv.textContent = '❌ Error: ' + authError.message;
+    // ========== LLAMADA SEGURA A EDGE FUNCTION ==========
+    const response = await fetch(
+      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({ email, password })
       }
+    );
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      errorDiv.textContent = result.error || 'Error en la autenticación';
       errorDiv.className = 'error';
       document.getElementById('admin-password').value = '';
-      document.getElementById('admin-password').focus();
       return;
     }
     
-    console.log('✅ Contraseña CORRECTA. User ID:', authData.user.id);
+    // ========== LOGIN EXITOSO ==========
+    console.log('✅ Login exitoso vía Edge Function:', result);
     
-    // ========== PASO 2: VERIFICAR SESIÓN ACTIVA ==========
-    errorDiv.textContent = '🔍 Verificando sesiones activas...';
+    // Guardar sesión localmente
+    sessionStorage.setItem('admin_session_token', result.sessionToken);
+    sessionStorage.setItem('admin_email', result.email);
+    sessionStorage.setItem('session_expires', result.expiresAt);
     
-    const estadoSesion = await verificarSesionActiva(email);
+    // Actualizar variables globales
+    adminSession = { email: result.email, token: result.sessionToken };
+    sesionActiva = true;
     
-    if (estadoSesion === 'ocupado_por_otro') {
-      const { data: sesionInfo } = await supabase
-        .from('sesiones_activas')
-        .select('login_timestamp, user_email')
-        .eq('tipo', 'admin')
-        .single();
-      
-      let mensaje = '⚠️ **PANEL ADMIN OCUPADO**\n\n';
-      mensaje += 'Ya hay una sesión de administrador activa. ';
-      
-      if (sesionInfo?.login_timestamp) {
-        const horaLogin = new Date(sesionInfo.login_timestamp);
-        mensaje += `\n\nLa sesión se inició el: ${horaLogin.toLocaleDateString()} a las ${horaLogin.toLocaleTimeString()}`;
-      }
-      
-      mensaje += '\n\nDebes esperar a que cierre sesión o esperar 30 minutos de inactividad.';
-      
-      await supabase.auth.signOut();
-      limpiarStorageTemporal();
-      
-      errorDiv.innerHTML = mensaje;
-      errorDiv.className = 'error';
-      errorDiv.style.backgroundColor = '#fff3cd';
-      errorDiv.style.border = '1px solid #ffeaa7';
-      errorDiv.style.padding = '15px';
-      errorDiv.style.borderRadius = '5px';
-      
-      return;
-    }
-    
-    // ========== PASO 3: REGISTRAR EN TABLA sesiones_activas ==========
-    errorDiv.textContent = '📝 Registrando sesión...';
-    
-    // IMPORTANTE: Generar token de sesión
-    const sessionToken = generateSessionToken();
-    
-    // Intentar escribir en la tabla
-    const { data: sesionData, error: sesionError } = await supabase
-      .from('sesiones_activas')
-      .upsert({
-        tipo: 'admin',
-        user_id: authData.user.id,
-        user_email: email,
-        session_token: sessionToken,
-        activa: false,  // Temporalmente false hasta OTP
-        ultima_actividad: new Date().toISOString(),
-        login_timestamp: null
-      }, { onConflict: 'tipo' })
-      .select();
-    
-    if (sesionError) {
-      console.error('❌ Error registrando sesión en BD:', sesionError);
-      
-      // Intentar con método alternativo si falla
-      try {
-        console.log('🔄 Intentando método alternativo...');
-        
-        // Primero obtener sesión actual para forzar actualización
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log('Sesión actual:', session);
-        
-        // Intentar update en lugar de upsert
-        const { error: updateError } = await supabase
-          .from('sesiones_activas')
-          .update({
-            user_id: authData.user.id,
-            user_email: email,
-            session_token: sessionToken,
-            activa: false,
-            ultima_actividad: new Date().toISOString()
-          })
-          .eq('tipo', 'admin');
-        
-        if (updateError) {
-          throw updateError;
-        }
-        
-        console.log('✅ Sesión registrada con update');
-      } catch (altError) {
-        console.error('❌ Método alternativo también falló:', altError);
-        throw new Error('No se pudo registrar la sesión en la base de datos');
-      }
-    } else {
-      console.log('✅ Sesión registrada en BD:', sesionData);
-    }
-    
-    // ========== PASO 4: ENVIAR OTP ==========
-    errorDiv.textContent = '📧 Enviando código de verificación...';
-    
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: email,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: window.location.origin
-      }
-    });
-    
-    if (otpError) {
-      console.error('Error enviando OTP:', otpError);
-      await supabase.auth.signOut();
-      limpiarStorageTemporal();
-      
-      if (otpError.message.includes('rate limit')) {
-        errorDiv.textContent = 'Demasiados intentos. Espera unos minutos.';
-      } else {
-        errorDiv.textContent = 'Error enviando el código: ' + otpError.message;
-      }
-      errorDiv.className = 'error';
-      return;
-    }
-    
-    // ========== PASO 5: MOSTRAR INTERFAZ OTP ==========
-    errorDiv.innerHTML = '✅ <strong>Contraseña correcta!</strong><br>📧 <strong>Código enviado!</strong> Revisa tu correo.';
+    // ========== MOSTRAR PANEL ADMIN ==========
+    errorDiv.innerHTML = '✅ <strong>Autenticación exitosa!</strong>';
     errorDiv.className = 'success';
     
-    // Guardar datos para OTP
-    sessionStorage.setItem('admin_email_temp', email);
-    sessionStorage.setItem('admin_user_id', authData.user.id);
-    sessionStorage.setItem('admin_session_token', sessionToken);
-    
-    // Mostrar campo OTP
-    mostrarCampoOTP();
+    setTimeout(() => {
+      document.getElementById('admin-email-display').textContent = result.email;
+      mostrarPanelAdminSeguro(result.sessionToken);
+      
+      // Iniciar controles de sesión
+      iniciarDetectorActividad();
+      resetInactivityTimer();
+      iniciarVerificacionPeriodicaSesion();
+    }, 1000);
     
   } catch (error) {
-    console.error('❌ Error inesperado en login:', error);
-    errorDiv.textContent = '❌ Error: ' + (error.message || 'Error inesperado');
+    console.error('❌ Error en loginAdmin:', error);
+    errorDiv.textContent = '🌐 Error de conexión. Verifica tu internet.';
     errorDiv.className = 'error';
-    
-    // Limpiar en caso de error
-    await supabase.auth.signOut().catch(() => {});
-    limpiarStorageTemporal();
   }
 }
 
+// Nueva función para mostrar panel seguro
+async function mostrarPanelAdminSeguro(sessionToken) {
+  console.log('🎉 Mostrando panel admin seguro');
+  
+  document.getElementById('admin-login').classList.add('oculto');
+  document.getElementById('admin-panel').classList.remove('oculto');
+  
+  // Mostrar info de sesión segura
+  const sessionInfo = document.createElement('div');
+  sessionInfo.id = 'session-info';
+  sessionInfo.style.cssText = `
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 14px;
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+  `;
+  sessionInfo.innerHTML = `
+    🔒 <strong>SESIÓN SEGURA ACTIVA</strong><br>
+    <small>Autenticación vía Edge Function</small><br>
+    <small>Token: ${sessionToken?.substring(0, 25)}...</small>
+  `;
+  
+  const panel = document.getElementById('admin-panel');
+  const firstElement = panel.querySelector('h2').nextElementSibling;
+  if (firstElement) {
+    panel.insertBefore(sessionInfo, firstElement.nextSibling);
+  }
+  
+  // Cargar datos del panel
+  await cargarPanelAdmin();
+}
 // Función para verificar OTP
 async function verificarOTP() {
   const email = sessionStorage.getItem('admin_email_temp');
@@ -683,24 +537,17 @@ function iniciarVerificacionPeriodicaSesion() {
   }
   
   verificacionInterval = setInterval(async () => {
-    if (!sesionActiva || !adminSession) return;
+    if (!sesionActiva) return;
     
-    try {
-      const sesionUsuario = await verificarSesionUsuarioActiva(ADMIN_EMAIL);
-      
-      if (sesionUsuario && !sesionUsuario.mismoUsuario) {
-        // Otro usuario tomó la sesión
-        console.log('🚫 Sesión tomada por otro usuario');
-        mostrarAlertaSesionDuplicada();
-        await cerrarSesionAdmin();
-        clearInterval(verificacionInterval);
-      }
-    } catch (error) {
-      console.error('Error en verificación periódica:', error);
+    const esValida = await verificarSesionAdmin();
+    
+    if (!esValida) {
+      console.log('🚫 Sesión inválida en verificación periódica, cerrando...');
+      await cerrarSesionAdmin();
+      clearInterval(verificacionInterval);
     }
   }, 30000); // Verificar cada 30 segundos
 }
-
 // Mostrar campo OTP
 function mostrarCampoOTP() {
   const loginForm = document.getElementById('login-fields');
@@ -969,41 +816,37 @@ function limpiarStorageTemporal() {
 async function verificarSesionInicial() {
   console.log('🔍 Verificando sesión inicial al cargar...');
   
+  const sessionToken = sessionStorage.getItem('admin_session_token');
+  
+  if (!sessionToken) {
+    console.log('ℹ️ No hay token en sessionStorage');
+    return;
+  }
+  
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    // Verificar con Edge Function
+    const esValida = await verificarSesionAdmin();
     
-    if (session && session.user.email === ADMIN_EMAIL) {
-      console.log('✅ Usuario autenticado encontrado:', session.user.email);
+    if (esValida) {
+      const email = sessionStorage.getItem('admin_email');
+      console.log('✅ Sesión válida encontrada para:', email);
       
-      // Verificar si hay sesión activa en BD
-      const { data: sesionData } = await supabase
-        .from('sesiones_activas')
-        .select('*')
-        .eq('tipo', 'admin')
-        .single();
-      
-      if (sesionData && sesionData.activa && sesionData.user_id === session.user.id) {
-        console.log('✅ Sesión válida y activa, mostrando panel');
-        adminSession = session;
-        sesionActiva = true;
-        document.getElementById('admin-email-display').textContent = session.user.email;
-        iniciarDetectorActividad();
-        resetInactivityTimer();
-        document.getElementById('admin-login').classList.add('oculto');
-        document.getElementById('admin-panel').classList.remove('oculto');
-        await cargarPanelAdmin();
-        
-        // Iniciar verificación periódica
-        iniciarVerificacionPeriodicaSesion();
-      } else {
-        console.log('⚠️ Sesión no activa en BD, cerrando');
-        await cerrarSesionAdmin();
-      }
+      adminSession = { email, token: sessionToken };
+      sesionActiva = true;
+      document.getElementById('admin-email-display').textContent = email;
+      iniciarDetectorActividad();
+      resetInactivityTimer();
+      document.getElementById('admin-login').classList.add('oculto');
+      document.getElementById('admin-panel').classList.remove('oculto');
+      await cargarPanelAdmin();
+      iniciarVerificacionPeriodicaSesion();
     } else {
-      console.log('ℹ️ No hay usuario autenticado válido');
+      console.log('⚠️ Sesión inválida, limpiando...');
+      await cerrarSesionAdmin();
     }
   } catch (error) {
     console.error('❌ Error verificando sesión inicial:', error);
+    await cerrarSesionAdmin();
   }
 }
 
@@ -2996,45 +2839,31 @@ iniciarDetectorActividad();
 
 // ==================== FUNCIÓN entrarAdmin ====================
 async function entrarAdmin() {
-  const { data: { session } } = await supabase.auth.getSession();
+  // Verificar si ya tiene sesión válida
+  const sessionToken = sessionStorage.getItem('admin_session_token');
   
-  if (session?.user?.email === ADMIN_EMAIL) {
-    // Verificar si ya tiene sesión 2FA activa
-    const estadoSesion = await verificarSesionActiva();
+  if (sessionToken && await verificarSesionAdmin()) {
+    // Ya tiene sesión válida
+    const email = sessionStorage.getItem('admin_email');
+    adminSession = { email, token: sessionToken };
+    sesionActiva = true;
     
-    if (estadoSesion === true) {
-      // Ya tiene sesión 2FA completa
-      const { data: sesionData } = await supabase
-        .from('sesiones_activas')
-        .select('user_email, session_token')
-        .eq('tipo', 'admin')
-        .single();
-      
-      if (sesionData?.user_email === ADMIN_EMAIL) {
-        // Sesión válida, mostrar panel
-        adminSession = session;
-        sesionActiva = true;
-        document.getElementById('admin-email-display').textContent = ADMIN_EMAIL;
-        await mostrarPanelAdminOTP(sesionData.session_token);
-        iniciarDetectorActividad();
-        resetInactivityTimer();
-        iniciarVerificacionPeriodicaSesion();
-        return;
-      }
-    }
-    
-    // Tiene sesión de password pero no completó 2FA
-    await supabase.auth.signOut();
+    document.getElementById('admin-email-display').textContent = email;
+    mostrarPanelAdminSeguro(sessionToken);
+    iniciarDetectorActividad();
+    resetInactivityTimer();
+    iniciarVerificacionPeriodicaSesion();
+    return;
   }
   
-  // Mostrar formulario de login 2FA
+  // No tiene sesión, mostrar login
   mostrarVentana('admin-login');
   
-  // Resetear formulario
-  cancelarOTP();
+  // Limpiar campos
+  document.getElementById('admin-email').value = '';
+  document.getElementById('admin-password').value = '';
   document.getElementById('admin-error').textContent = '';
 }
-
 // ==================== FUNCIÓN PARA RECUPERAR PASSWORD ====================
 async function recuperarPasswordAdmin() {
   const email = ADMIN_EMAIL;
