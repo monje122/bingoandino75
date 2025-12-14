@@ -724,8 +724,8 @@ async function cerrarSesionAdmin() {
       verificacionInterval = null;
     }
     
-    // Limpiar sesión activa
-    await actualizarSesionActiva(null, false);
+    // ❌ COMENTA o ELIMINA esta línea (es la 728):
+    // await actualizarSesionActiva(null, false);
     
     // Cerrar sesión en Supabase
     const { error } = await supabase.auth.signOut();
@@ -766,7 +766,20 @@ async function cerrarSesionAdmin() {
     alert('Error al cerrar sesión');
   }
 }
-
+// Función para actualizar actividad de sesión
+function actualizarActividadSesion() {
+  if (!sesionActiva) return;
+  
+  console.log('👀 Actividad detectada, actualizando sesión...');
+  
+  // Opcional: Notificar al servidor que la sesión sigue activa
+  const sessionToken = sessionStorage.getItem('admin_session_token');
+  if (sessionToken) {
+    // Aquí puedes hacer una llamada a tu Edge Function si quieres
+    // registrar la actividad en el servidor
+    console.log('Sesión activa, token:', sessionToken.substring(0, 20) + '...');
+  }
+}
 // Timer de inactividad
 function resetInactivityTimer() {
   clearTimeout(inactivityTimer);
