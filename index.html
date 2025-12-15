@@ -227,8 +227,11 @@
   <h2>👑 Panel de Administración</h2>
   <div style="margin-bottom: 20px; color: #666;">
     Conectado como: <span id="admin-email-display"></span>
-    <button onclick="cerrarSesionAdmin()" style="margin-left: 10px; background: #ff4757;">Cerrar Sesión</button>
+ <button id="logoutBtn" class="btn-logout">
+        🔓 Cerrar Sesión
+      </button>
   </div>
+    </div>
   <button id="cerrarVentasBtn" class="btn-admin">Cerrar Ventas</button>
   <button id="abrirVentasBtn">Abrir Ventas</button>
   <button onclick="reiniciarTodo()">Reiniciar Todo</button>
