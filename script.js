@@ -609,6 +609,8 @@ async function verificarOTP() {
   const email = sessionStorage.getItem('pending_email');
   const deviceId = sessionStorage.getItem('pending_deviceId');
   
+  console.log('🔍 Verificando OTP...', { email, deviceId, otpCode });
+  
   if (!otpCode || otpCode.length !== 6) {
     mostrarErrorOTP('❌ Ingresa un código de 6 dígitos');
     return;
@@ -624,7 +626,7 @@ async function verificarOTP() {
     mostrarErrorOTP('🔐 Verificando código...');
     document.getElementById('otp-code').disabled = true;
     
-    // Verificar OTP con Supabase
+    // 1. VERIFICAR OTP CON SUPABASE AUTH
     const { data, error } = await supabase.auth.verifyOtp({
       email: email,
       token: otpCode,
@@ -647,16 +649,80 @@ async function verificarOTP() {
     console.log('✅ OTP verificado correctamente');
     mostrarErrorOTP('✅ Código correcto. Creando sesión...');
     
-    // ========== PASO 4: CREAR SESIÓN ÚNICA ==========
-    await crearSesionUnicaOTP(email, deviceId);
+    // 2. CREAR SESIÓN ÚNICA CON EDGE FUNCTION (¡ESTO FALTA!)
+    console.log('🔄 Creando sesión única después de OTP...');
+    
+    const response = await fetch(
+      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({ 
+          email: email.toLowerCase().trim(), 
+          deviceId: deviceId,
+          action: 'create_session_otp' // ¡IMPORTANTE!
+        })
+      }
+    );
+    
+    console.log('📡 Respuesta Edge Function:', response.status);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Error creando sesión');
+    }
+    
+    const result = await response.json();
+    console.log('✅ Sesión creada:', result);
+    
+    // 3. GUARDAR DATOS DE SESIÓN
+    sessionStorage.setItem('admin_session_token', result.sessionToken);
+    sessionStorage.setItem('admin_email', result.email);
+    sessionStorage.setItem('session_expires', result.expiresAt);
+    sessionStorage.setItem('device_id', result.deviceId);
+    
+    // Actualizar deviceId si es necesario
+    if (result.deviceId && result.deviceId !== deviceId) {
+      localStorage.setItem('admin_device_id', result.deviceId);
+    }
+    
+    // Variables globales
+    adminSession = { email: result.email, token: result.sessionToken };
+    sesionActiva = true;
+    
+    // Limpiar datos temporales
+    sessionStorage.removeItem('pending_email');
+    sessionStorage.removeItem('pending_deviceId');
+    sessionStorage.removeItem('pending_password');
+    
+    // 4. MOSTRAR ÉXITO Y REDIRIGIR
+    mostrarErrorOTP('✅ ¡Autenticación completada! Redirigiendo...');
+    
+    // Redirigir al panel
+    setTimeout(() => {
+      document.getElementById('admin-login').classList.add('oculto');
+      document.getElementById('admin-panel').classList.remove('oculto');
+      document.getElementById('admin-email-display').textContent = result.email;
+      
+      // Iniciar controles
+      iniciarDetectorActividad();
+      resetInactivityTimer();
+      iniciarVerificacionPeriodicaSesion();
+      
+      // Cargar panel
+      cargarPanelAdmin();
+      
+    }, 1000);
     
   } catch (error) {
-    console.error('Error verificando OTP:', error);
-    mostrarErrorOTP('❌ Error verificando código');
+    console.error('❌ Error en verificarOTP:', error);
+    mostrarErrorOTP('❌ Error: ' + error.message);
     document.getElementById('otp-code').disabled = false;
   }
 }
-
 async function crearSesionUnicaOTP(email, deviceId) {
   try {
     const response = await fetch(
@@ -1041,126 +1107,6 @@ async function mostrarPanelAdminSeguro(sessionToken) {
   await cargarPanelAdmin();
 }
 // Función para verificar OTP
-async function verificarOTP() {
-  const email = sessionStorage.getItem('admin_email_temp');
-  const userId = sessionStorage.getItem('admin_user_id');
-  const sessionToken = sessionStorage.getItem('admin_session_token');
-  const otpCode = document.getElementById('otp-code').value.trim();
-  const errorDiv = document.getElementById('admin-error');
-  
-  errorDiv.textContent = '';
-  errorDiv.className = '';
-  
-  if (!email || !userId) {
-    errorDiv.textContent = '❌ Error: Sesión expirada. Vuelve a intentar.';
-    errorDiv.className = 'error';
-    cancelarOTP();
-    return;
-  }
-  
-  if (!otpCode || otpCode.length !== 6) {
-    errorDiv.textContent = '❌ Ingresa un código de 6 dígitos válido';
-    errorDiv.className = 'error';
-    document.getElementById('otp-code').focus();
-    return;
-  }
-  
-  try {
-    errorDiv.textContent = '🔐 Verificando código...';
-    errorDiv.className = 'info';
-    
-    // ========== PASO 1: VERIFICAR OTP ==========
-    const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
-      email: email,
-      token: otpCode.trim(),
-      type: 'email'
-    });
-    
-    if (otpError) {
-      console.error('Error OTP:', otpError);
-      
-      if (otpError.message.includes('token has expired')) {
-        errorDiv.textContent = '❌ El código ha expirado. Solicita uno nuevo.';
-      } else if (otpError.message.includes('invalid')) {
-        errorDiv.textContent = '❌ Código incorrecto. Intenta de nuevo.';
-      } else {
-        errorDiv.textContent = '❌ Error verificando código: ' + otpError.message;
-      }
-      errorDiv.className = 'error';
-      document.getElementById('otp-code').value = '';
-      document.getElementById('otp-code').focus();
-      return;
-    }
-    
-    console.log('✅ OTP CORRECTO. Usuario:', otpData.user.id);
-    
-    // ========== PASO 2: ACTUALIZAR SESIÓN EN BD ==========
-    errorDiv.textContent = '🔄 Activando sesión...';
-    
-    const { error: updateError } = await supabase
-      .from('sesiones_activas')
-      .update({
-        user_id: userId,
-        user_email: email,
-        session_token: sessionToken,
-        activa: true,
-        ultima_actividad: new Date().toISOString(),
-        login_timestamp: new Date().toISOString()
-      })
-      .eq('tipo', 'admin');
-    
-    if (updateError) {
-      console.error('❌ Error actualizando sesión activa:', updateError);
-      throw new Error('No se pudo activar la sesión');
-    }
-    
-    console.log('✅ Sesión activada en BD');
-    
-    // ========== PASO 3: CONFIGURAR SESIÓN LOCAL ==========
-    clearTimeout(otpTimeout);
-    
-    adminSession = otpData.session;
-    sesionActiva = true;
-    
-    // Limpiar temporales
-    sessionStorage.removeItem('admin_email_temp');
-    sessionStorage.removeItem('admin_user_id');
-    sessionStorage.removeItem('admin_session_token');
-    
-    // ========== PASO 4: MOSTRAR PANEL ==========
-    document.getElementById('admin-email-display').textContent = email;
-    await mostrarPanelAdminOTP(sessionToken);
-    
-    // ========== PASO 5: INICIAR DETECTOR INACTIVIDAD ==========
-    iniciarDetectorActividad();
-    resetInactivityTimer();
-    
-    // ========== PASO 6: INICIAR VERIFICACIÓN PERIÓDICA ==========
-    iniciarVerificacionPeriodicaSesion();
-    
-  } catch (error) {
-    console.error('❌ Error en verificarOTP:', error);
-    
-    clearTimeout(otpTimeout);
-    
-    if (error.message?.includes('network') || error.message?.includes('fetch')) {
-      errorDiv.textContent = '🌐 Error de conexión. Verifica tu internet.';
-    } else {
-      errorDiv.textContent = '❌ Error: ' + error.message;
-    }
-    
-    errorDiv.className = 'error';
-    
-    // Limpiar
-    sessionStorage.removeItem('admin_email_temp');
-    sessionStorage.removeItem('admin_user_id');
-    sessionStorage.removeItem('admin_session_token');
-    
-    setTimeout(() => {
-      if (!sesionActiva) cancelarOTP();
-    }, 3000);
-  }
-}
 
 // Función para verificación periódica de sesión
 let verificacionInterval = null;
