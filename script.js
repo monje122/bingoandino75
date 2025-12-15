@@ -15,6 +15,21 @@ let cantidadFijaCartones = 1;
 let adminSession = null;
 let sesionActiva = false;
 
+const CONFIG_OTP = {
+  ACTIVADO: true,                     // Activar/desactivar OTP
+  TIEMPO_EXPIRACION: 10,              // Minutos para usar el código
+  REENVIOS_MAXIMOS: 2,                // Máximo de reenvíos
+  REQUERIDO_SIEMPRE: true             // Siempre pedir OTP
+};
+
+let credencialesVerificadas = {
+  email: '',
+  password: '',
+  deviceId: '',
+  timestamp: 0
+};
+
+let reenviosRealizados = 0;
 // Timeout de sesión (30 minutos)
 const SESSION_TIMEOUT = 30 * 60 * 1000;
 console.log('✅ SESSION_TIMEOUT =', SESSION_TIMEOUT, 'ms =', SESSION_TIMEOUT/60000, 'minutos');
@@ -392,7 +407,7 @@ async function loginAdmin() {
     return;
   }
   
-  console.log('🔄 Iniciando login con sesión única...');
+  console.log('🔄 Iniciando login con sesión única + OTP...');
   
   try {
     errorDiv.textContent = '🔐 Verificando credenciales...';
@@ -407,6 +422,9 @@ async function loginAdmin() {
     
     console.log('📱 Device ID:', deviceId);
     
+    // ========== PASO 1: VERIFICAR CREDENCIALES ==========
+    errorDiv.textContent = '🔐 Verificando email y contraseña...';
+    
     const response = await fetch(
       'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
       {
@@ -418,7 +436,8 @@ async function loginAdmin() {
         body: JSON.stringify({ 
           email: email.toLowerCase().trim(), 
           password: password,
-          deviceId: deviceId
+          deviceId: deviceId,
+          action: 'verify_credentials' // Nueva acción para solo verificar
         })
       }
     );
@@ -451,10 +470,218 @@ async function loginAdmin() {
       return;
     }
     
-    // ========== LOGIN EXITOSO ==========
-    console.log('✅ Login exitoso con sesión única');
+    // ========== PASO 2: CREDENCIALES CORRECTAS - ENVIAR OTP ==========
+    console.log('✅ Credenciales verificadas correctamente');
     
-    // Guardar datos
+    // Guardar credenciales temporalmente
+    sessionStorage.setItem('pending_email', email);
+    sessionStorage.setItem('pending_deviceId', deviceId);
+    sessionStorage.setItem('pending_password', password); // Solo para referencia
+    
+    errorDiv.innerHTML = '✅ <strong>Credenciales correctas</strong><br>📧 Enviando código de verificación...';
+    errorDiv.className = 'success';
+    
+    // Enviar OTP
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: window.location.origin
+      }
+    });
+    
+    if (otpError) {
+      console.error('❌ Error enviando OTP:', otpError);
+      
+      // Fallback: continuar sin OTP si hay error
+      errorDiv.textContent = '⚠️ Error enviando OTP. Continuando sin verificación...';
+      
+      // Proceder directamente a crear sesión
+      await crearSesionDirecta(email, deviceId);
+      return;
+    }
+    
+    console.log('✅ OTP enviado a:', email);
+    
+    // ========== PASO 3: MOSTRAR INTERFAZ OTP ==========
+    mostrarInterfazOTP(email);
+    
+  } catch (error) {
+    console.error('❌ Error en login:', error);
+    
+    let errorMsg = 'Error de conexión';
+    if (error.message.includes('Failed to fetch')) {
+      errorMsg = 'Error de red. Verifica tu conexión a internet';
+    } else {
+      errorMsg = error.message;
+    }
+    
+    errorDiv.textContent = errorMsg;
+    errorDiv.className = 'error';
+    document.getElementById('admin-password').value = '';
+  }
+}
+
+// ==================== FUNCIONES OTP ====================
+
+function mostrarInterfazOTP(email) {
+  // Ocultar campos de login
+  const emailField = document.getElementById('admin-email').parentElement;
+  const passwordField = document.getElementById('admin-password').parentElement;
+  const loginButton = document.querySelector('button[onclick="loginAdmin()"]');
+  
+  if (emailField) emailField.style.display = 'none';
+  if (passwordField) passwordField.style.display = 'none';
+  if (loginButton) loginButton.style.display = 'none';
+  
+  // Crear o mostrar contenedor OTP
+  let otpContainer = document.getElementById('otp-container');
+  
+  if (!otpContainer) {
+    otpContainer = document.createElement('div');
+    otpContainer.id = 'otp-container';
+    otpContainer.style.cssText = `
+      margin-top: 20px;
+      padding: 20px;
+      border: 2px solid #4CAF50;
+      border-radius: 10px;
+      background: #f9f9f9;
+    `;
+    
+    otpContainer.innerHTML = `
+      <h3 style="color: #4CAF50; margin-top: 0;">🔐 Verificación en Dos Pasos</h3>
+      <p>✅ <strong>Credenciales verificadas</strong></p>
+      <p>📧 Código enviado a: <strong id="otp-email-display">${email}</strong></p>
+      
+      <div style="margin: 15px 0;">
+        <label for="otp-code"><strong>Código de 6 dígitos:</strong></label><br>
+        <input type="text" id="otp-code" 
+               placeholder="123456" 
+               maxlength="6" 
+               style="font-size: 20px; text-align: center; letter-spacing: 8px; padding: 10px; width: 160px; border: 2px solid #ddd; border-radius: 5px;"
+               oninput="this.value = this.value.replace(/\D/g, '').slice(0,6)">
+      </div>
+      
+      <div style="margin: 15px 0;">
+        <button onclick="verificarOTP()" 
+                style="background: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer;">
+          ✅ Verificar Código
+        </button>
+        
+        <button onclick="reenviarOTP()" 
+                style="background: #FF9800; color: white; padding: 10px 20px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-left: 10px;">
+          🔄 Reenviar
+        </button>
+        
+        <button onclick="cancelarOTP()" 
+                style="background: #f44336; color: white; padding: 10px 20px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-left: 10px;">
+          ❌ Cancelar
+        </button>
+      </div>
+      
+      <div id="otp-timer" style="color: #666; font-size: 14px;">
+        ⏰ Código válido por: <span id="otp-countdown">10:00</span>
+      </div>
+      
+      <div id="otp-error" style="color: #f44336; margin-top: 10px; min-height: 20px;"></div>
+    `;
+    
+    const loginSection = document.getElementById('admin-login');
+    loginSection.appendChild(otpContainer);
+  } else {
+    otpContainer.style.display = 'block';
+    document.getElementById('otp-email-display').textContent = email;
+  }
+  
+  // Iniciar timer
+  iniciarTimerOTP();
+  
+  // Enfocar campo OTP
+  setTimeout(() => {
+    const otpInput = document.getElementById('otp-code');
+    if (otpInput) otpInput.focus();
+  }, 100);
+}
+
+async function verificarOTP() {
+  const otpCode = document.getElementById('otp-code').value.trim();
+  const errorDiv = document.getElementById('otp-error') || document.getElementById('admin-error');
+  const email = sessionStorage.getItem('pending_email');
+  const deviceId = sessionStorage.getItem('pending_deviceId');
+  
+  if (!otpCode || otpCode.length !== 6) {
+    mostrarErrorOTP('❌ Ingresa un código de 6 dígitos');
+    return;
+  }
+  
+  if (!email || !deviceId) {
+    mostrarErrorOTP('❌ Sesión expirada. Vuelve a intentar.');
+    cancelarOTP();
+    return;
+  }
+  
+  try {
+    mostrarErrorOTP('🔐 Verificando código...');
+    document.getElementById('otp-code').disabled = true;
+    
+    // Verificar OTP con Supabase
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email,
+      token: otpCode,
+      type: 'email'
+    });
+    
+    if (error) {
+      if (error.message.includes('token has expired')) {
+        mostrarErrorOTP('❌ El código ha expirado. Solicita uno nuevo.');
+      } else if (error.message.includes('invalid')) {
+        mostrarErrorOTP('❌ Código incorrecto. Intenta de nuevo.');
+      } else {
+        mostrarErrorOTP('❌ Error: ' + error.message);
+      }
+      document.getElementById('otp-code').disabled = false;
+      document.getElementById('otp-code').focus();
+      return;
+    }
+    
+    console.log('✅ OTP verificado correctamente');
+    mostrarErrorOTP('✅ Código correcto. Creando sesión...');
+    
+    // ========== PASO 4: CREAR SESIÓN ÚNICA ==========
+    await crearSesionUnicaOTP(email, deviceId);
+    
+  } catch (error) {
+    console.error('Error verificando OTP:', error);
+    mostrarErrorOTP('❌ Error verificando código');
+    document.getElementById('otp-code').disabled = false;
+  }
+}
+
+async function crearSesionUnicaOTP(email, deviceId) {
+  try {
+    const response = await fetch(
+      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({ 
+          email: email.toLowerCase().trim(), 
+          deviceId: deviceId,
+          action: 'create_session_otp' // Nueva acción para crear sesión después de OTP
+        })
+      }
+    );
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Error creando sesión');
+    }
+    
+    // Guardar datos de sesión
     sessionStorage.setItem('admin_session_token', result.sessionToken);
     sessionStorage.setItem('admin_email', result.email);
     sessionStorage.setItem('session_expires', result.expiresAt);
@@ -469,7 +696,14 @@ async function loginAdmin() {
     adminSession = { email: result.email, token: result.sessionToken };
     sesionActiva = true;
     
-    errorDiv.innerHTML = '✅ <strong>¡Acceso concedido!</strong><br>Sesión única activa';
+    // Limpiar datos temporales
+    sessionStorage.removeItem('pending_email');
+    sessionStorage.removeItem('pending_deviceId');
+    sessionStorage.removeItem('pending_password');
+    
+    // Mostrar éxito y redirigir
+    const errorDiv = document.getElementById('admin-error');
+    errorDiv.innerHTML = '✅ <strong>¡Acceso concedido!</strong><br>Verificación en dos pasos completada';
     errorDiv.className = 'success';
     
     // Redirigir al panel
@@ -489,18 +723,178 @@ async function loginAdmin() {
     }, 1000);
     
   } catch (error) {
-    console.error('❌ Error en login:', error);
+    console.error('❌ Error creando sesión:', error);
+    mostrarErrorOTP('❌ Error creando sesión: ' + error.message);
     
-    let errorMsg = 'Error de conexión';
-    if (error.message.includes('Failed to fetch')) {
-      errorMsg = 'Error de red. Verifica tu conexión a internet';
-    } else {
-      errorMsg = error.message;
+    // Rehabilitar campo OTP
+    document.getElementById('otp-code').disabled = false;
+  }
+}
+
+async function reenviarOTP() {
+  const email = sessionStorage.getItem('pending_email');
+  
+  if (!email) {
+    mostrarErrorOTP('❌ No hay email pendiente');
+    return;
+  }
+  
+  try {
+    mostrarErrorOTP('🔄 Reenviando código...');
+    
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: { shouldCreateUser: false }
+    });
+    
+    if (error) throw error;
+    
+    mostrarErrorOTP('✅ Código reenviado');
+    
+    // Reiniciar timer
+    iniciarTimerOTP();
+    
+  } catch (error) {
+    console.error('Error reenviando OTP:', error);
+    mostrarErrorOTP('❌ Error reenviando código');
+  }
+}
+
+function cancelarOTP() {
+  // Limpiar timer
+  clearInterval(window.otpTimerInterval);
+  
+  // Limpiar datos temporales
+  sessionStorage.removeItem('pending_email');
+  sessionStorage.removeItem('pending_deviceId');
+  sessionStorage.removeItem('pending_password');
+  
+  // Ocultar OTP
+  const otpContainer = document.getElementById('otp-container');
+  if (otpContainer) {
+    otpContainer.style.display = 'none';
+  }
+  
+  // Mostrar campos de login
+  const emailField = document.getElementById('admin-email').parentElement;
+  const passwordField = document.getElementById('admin-password').parentElement;
+  const loginButton = document.querySelector('button[onclick="loginAdmin()"]');
+  
+  if (emailField) emailField.style.display = 'block';
+  if (passwordField) passwordField.style.display = 'block';
+  if (loginButton) loginButton.style.display = 'block';
+  
+  // Limpiar campos
+  document.getElementById('admin-password').value = '';
+  if (document.getElementById('otp-code')) {
+    document.getElementById('otp-code').value = '';
+  }
+  
+  // Limpiar mensajes
+  const errorDiv = document.getElementById('admin-error');
+  if (errorDiv) {
+    errorDiv.textContent = '';
+    errorDiv.className = '';
+  }
+  
+  // Enfocar email
+  document.getElementById('admin-email').focus();
+}
+
+function iniciarTimerOTP() {
+  clearInterval(window.otpTimerInterval);
+  
+  let tiempoRestante = 10 * 60; // 10 minutos en segundos
+  
+  window.otpTimerInterval = setInterval(() => {
+    tiempoRestante--;
+    
+    if (tiempoRestante <= 0) {
+      clearInterval(window.otpTimerInterval);
+      mostrarErrorOTP('⏰ El código ha expirado');
+      return;
     }
     
-    errorDiv.textContent = errorMsg;
+    const minutos = Math.floor(tiempoRestante / 60);
+    const segundos = tiempoRestante % 60;
+    
+    const countdownElement = document.getElementById('otp-countdown');
+    if (countdownElement) {
+      countdownElement.textContent = `${minutos}:${segundos.toString().padStart(2, '0')}`;
+      
+      // Cambiar color cuando queden 2 minutos
+      if (tiempoRestante <= 120) {
+        countdownElement.style.color = '#f44336';
+        countdownElement.style.fontWeight = 'bold';
+      }
+    }
+  }, 1000);
+}
+
+function mostrarErrorOTP(mensaje) {
+  const errorDiv = document.getElementById('otp-error');
+  if (errorDiv) {
+    errorDiv.textContent = mensaje;
+    errorDiv.style.color = mensaje.startsWith('✅') ? '#4CAF50' : '#f44336';
+  }
+}
+
+// Función fallback si OTP falla
+async function crearSesionDirecta(email, deviceId) {
+  try {
+    const response = await fetch(
+      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({ 
+          email: email.toLowerCase().trim(), 
+          deviceId: deviceId,
+          action: 'create_session_direct'
+        })
+      }
+    );
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(result.error || 'Error creando sesión');
+    }
+    
+    // Proceder con login normal
+    sessionStorage.setItem('admin_session_token', result.sessionToken);
+    sessionStorage.setItem('admin_email', result.email);
+    sessionStorage.setItem('session_expires', result.expiresAt);
+    sessionStorage.setItem('device_id', result.deviceId);
+    
+    adminSession = { email: result.email, token: result.sessionToken };
+    sesionActiva = true;
+    
+    const errorDiv = document.getElementById('admin-error');
+    errorDiv.innerHTML = '✅ <strong>¡Acceso concedido!</strong><br>Sesión única activa';
+    errorDiv.className = 'success';
+    
+    setTimeout(() => {
+      document.getElementById('admin-login').classList.add('oculto');
+      document.getElementById('admin-panel').classList.remove('oculto');
+      document.getElementById('admin-email-display').textContent = result.email;
+      
+      iniciarDetectorActividad();
+      resetInactivityTimer();
+      iniciarVerificacionPeriodicaSesion();
+      
+      cargarPanelAdmin();
+      
+    }, 1000);
+    
+  } catch (error) {
+    console.error('❌ Error en sesión directa:', error);
+    const errorDiv = document.getElementById('admin-error');
+    errorDiv.textContent = '❌ Error creando sesión: ' + error.message;
     errorDiv.className = 'error';
-    document.getElementById('admin-password').value = '';
   }
 }
 
