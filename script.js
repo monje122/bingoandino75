@@ -88,6 +88,140 @@ async function setConfigValue(clave, value) {
 }
 
 // ==================== SISTEMA DE SESIÓN ÚNICA ====================
+// Función para cerrar sesión
+// ========== FUNCIÓN LOGOUT COMPATIBLE CON TU CÓDIGO ==========
+async function logoutAdmin() {
+  // TÚ usas sessionStorage, no localStorage:
+  const email = sessionStorage.getItem('admin_email');
+  const deviceId = localStorage.getItem('admin_device_id');
+  const sessionToken = sessionStorage.getItem('admin_session_token');
+  
+  console.log('🔍 Datos para logout:', { email, deviceId, sessionToken });
+  
+  if (!email || !deviceId) {
+    console.log("⚠️ No hay sesión activa completa");
+    // Aún así redirigir
+    resetToLoginState();
+    return;
+  }
+
+  try {
+    // Opcional: confirmación
+    if (!confirm('¿Estás seguro de cerrar sesión?\n\n✅ Esto liberará tu dispositivo para iniciar en otro lugar.')) {
+      return;
+    }
+    
+    console.log('🔄 Enviando logout al servidor...');
+    
+    const response = await fetch(
+      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({
+          action: 'logout',
+          email: email,
+          deviceId: deviceId,
+          sessionToken: sessionToken
+        })
+      }
+    );
+    
+    console.log('📡 Estado respuesta logout:', response.status);
+    const result = await response.json();
+    console.log('📦 Resultado logout:', result);
+    
+    if (result.success) {
+      console.log('✅ Logout exitoso en servidor');
+      clearAdminSession();
+      alert('✅ Sesión cerrada. Ahora puedes iniciar en otro dispositivo.');
+      resetToLoginState();
+    } else {
+      console.error("❌ Error del servidor al cerrar sesión:", result.error);
+      // Aún así limpiar localmente
+      clearAdminSession();
+      resetToLoginState();
+    }
+    
+  } catch (error) {
+    console.error("❌ Error en logout:", error);
+    // Aún así limpiar localmente
+    clearAdminSession();
+    resetToLoginState();
+  }
+}
+
+// ========== FUNCIÓN PARA LIMPIAR SESIÓN (COMPATIBLE) ==========
+function clearAdminSession() {
+  console.log('🧹 Limpiando sesión...');
+  
+  // Limpiar sessionStorage (lo que TÚ usas)
+  sessionStorage.removeItem('admin_session_token');
+  sessionStorage.removeItem('admin_email');
+  sessionStorage.removeItem('session_expires');
+  sessionStorage.removeItem('device_id');
+  
+  // NO limpiar el device_id de localStorage, se reutiliza
+  // localStorage.removeItem('admin_device_id');  // ← NO hacer esto
+  
+  // Limpiar variables globales (si las tienes)
+  if (typeof adminSession !== 'undefined') {
+    adminSession = null;
+  }
+  if (typeof sesionActiva !== 'undefined') {
+    sesionActiva = false;
+  }
+  
+  // Detener timers si existen
+  if (typeof inactivityTimer !== 'undefined' && inactivityTimer) {
+    clearTimeout(inactivityTimer);
+  }
+  if (typeof sessionCheckInterval !== 'undefined' && sessionCheckInterval) {
+    clearInterval(sessionCheckInterval);
+  }
+  
+  // Eliminar elementos del DOM que puedan existir
+  const sessionInfo = document.getElementById('session-info');
+  if (sessionInfo) sessionInfo.remove();
+  
+  console.log('✅ Sesión limpiada localmente');
+}
+
+// ========== FUNCIÓN PARA VOLVER A LOGIN (COMPATIBLE) ==========
+function resetToLoginState() {
+  console.log('🔄 Regresando a estado de login...');
+  
+  // Ocultar panel, mostrar login
+  const adminPanel = document.getElementById('admin-panel');
+  const adminLogin = document.getElementById('admin-login');
+  
+  if (adminPanel) adminPanel.classList.add('oculto');
+  if (adminLogin) adminLogin.classList.remove('oculto');
+  
+  // Limpiar campos
+  const adminPassword = document.getElementById('admin-password');
+  const adminError = document.getElementById('admin-error');
+  
+  if (adminPassword) adminPassword.value = '';
+  if (adminError) {
+    adminError.textContent = '';
+    adminError.className = '';
+  }
+}
+
+// ========== CONFIGURAR EVENT LISTENER ==========
+document.addEventListener('DOMContentLoaded', function() {
+  const logoutBtn = document.getElementById('logoutBtn');
+  
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', logoutAdmin);
+    console.log('✅ Botón de logout configurado');
+  }
+});
+
 // Función para crear la tabla de sesiones activas
 async function crearTablaSesiones() {
   console.log('🔄 Creando/verificando tabla de sesiones...');
@@ -240,69 +374,7 @@ async function forzarCerrarSesionRemota() {
   }
 }
 
-async function cerrarSesionAdmin() {
-  console.log('👋 Cerrando sesión admin...');
-  
-  try {
-    // Detener verificaciones
-    if (verificacionInterval) {
-      clearInterval(verificacionInterval);
-      verificacionInterval = null;
-    }
-    
-    // Notificar al backend
-    const sessionToken = sessionStorage.getItem('admin_session_token');
-    if (sessionToken) {
-      try {
-        await fetch(
-          'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/update-session',
-          {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
-            },
-            body: JSON.stringify({ 
-              action: "logout",
-              sessionToken: sessionToken
-            })
-          }
-        );
-      } catch (e) {
-        console.warn('⚠️ No se pudo notificar logout al backend:', e);
-      }
-    }
-    
-    // Limpiar TODO
-    adminSession = null;
-    sesionActiva = false;
-    clearTimeout(inactivityTimer);
-    
-    // Limpiar storage (PERO mantener device_id en localStorage)
-    sessionStorage.removeItem('admin_session_token');
-    sessionStorage.removeItem('admin_email');
-    sessionStorage.removeItem('session_expires');
-    sessionStorage.removeItem('device_id');
-    // NO borrar: localStorage.removeItem('admin_device_id');
-    
-    // Limpiar formulario
-    document.getElementById('admin-email').value = '';
-    document.getElementById('admin-password').value = '';
-    
-    const errorDiv = document.getElementById('admin-error');
-    if (errorDiv) errorDiv.textContent = '';
-    
-    // Volver a login
-    document.getElementById('admin-panel').classList.add('oculto');
-    document.getElementById('admin-login').classList.remove('oculto');
-    
-    console.log('✅ Sesión cerrada. Otro dispositivo puede loguearse ahora.');
-    
-  } catch (error) {
-    console.error('❌ Error cerrando sesión:', error);
-    alert('Error al cerrar sesión');
-  }
-}
+
 // ==================== LOGIN CON DOBLE FACTOR ====================
 // ==================== LOGIN SEGURO CON EDGE FUNCTION ====================
 async function loginAdmin() {
@@ -457,7 +529,6 @@ async function forzarCerrarSesionRemota() {
         })
       }
     );
-    
     if (response.ok) {
       errorDiv.innerHTML = '✅ Sesiones remotas cerradas.<br>Ahora puedes iniciar sesión.';
       errorDiv.className = 'success';
@@ -571,7 +642,7 @@ async function mostrarPanelAdminSeguro(sessionToken) {
   if (firstElement) {
     panel.insertBefore(sessionInfo, firstElement.nextSibling);
   }
-  
+
   // Cargar datos del panel
   await cargarPanelAdmin();
 }
@@ -893,7 +964,7 @@ async function mostrarPanelAdminOTP(sessionToken) {
   cerrarBtn.style.margin = '10px 0';
   cerrarBtn.style.padding = '10px 20px';
   cerrarBtn.style.fontSize = '16px';
-  cerrarBtn.onclick = cerrarSesionAdmin;
+  cerrarBtn.onclick = logoutAdmin;
   
   // Agregar botón de forzar cierre remoto
   const forzarBtn = document.createElement('button');
@@ -916,72 +987,7 @@ async function mostrarPanelAdminOTP(sessionToken) {
   await cargarPanelAdmin();
 }
 
-// Función para cerrar sesión
-async function cerrarSesionAdmin() {
-  console.log('👋 Cerrando sesión admin...');
-  
-  try {
-    // Detener verificaciones periódicas
-    if (verificacionInterval) {
-      clearInterval(verificacionInterval);
-      verificacionInterval = null;
-    }
-    
-    // Notificar al backend que cerramos sesión
-    const sessionToken = sessionStorage.getItem('admin_session_token');
-    if (sessionToken) {
-      try {
-        await fetch(
-          'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/update-session',
-          {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
-            },
-            body: JSON.stringify({ 
-              action: "logout",
-              sessionToken: sessionToken
-            })
-          }
-        );
-        console.log('✅ Notificado logout al backend');
-      } catch (e) {
-        console.warn('⚠️ No se pudo notificar logout:', e);
-      }
-    }
-    
-    // Limpiar variables globales
-    adminSession = null;
-    sesionActiva = false;
-    clearTimeout(inactivityTimer);
-    
-    // Limpiar sessionStorage (PERO mantener device_id en localStorage)
-    sessionStorage.removeItem('admin_session_token');
-    sessionStorage.removeItem('admin_email');
-    sessionStorage.removeItem('session_expires');
-    sessionStorage.removeItem('device_id');
-    // NO borrar: localStorage.removeItem('admin_device_id');
-    // Así el mismo dispositivo puede volver a loguearse
-    
-    // Limpiar formulario
-    document.getElementById('admin-email').value = '';
-    document.getElementById('admin-password').value = '';
-    
-    const errorDiv = document.getElementById('admin-error');
-    if (errorDiv) errorDiv.textContent = '';
-    
-    // Volver a pantalla de login
-    document.getElementById('admin-panel').classList.add('oculto');
-    document.getElementById('admin-login').classList.remove('oculto');
-    
-    console.log('✅ Sesión cerrada. Ahora otro dispositivo puede iniciar sesión.');
-    
-  } catch (error) {
-    console.error('❌ Error cerrando sesión:', error);
-    alert('Error al cerrar sesión');
-  }
-}
+
 // Función para actualizar actividad de sesión
 function actualizarActividadSesion() {
   if (!sesionActiva) return;
@@ -3145,7 +3151,6 @@ window.enviarComprobante = enviarComprobante;
 window.consultarCartones = consultarCartones;
 window.elegirMasCartones = elegirMasCartones;
 window.entrarAdmin = entrarAdmin;
-window.cerrarSesionAdmin = cerrarSesionAdmin;
 window.loginAdmin = loginAdmin;
 window.toggleCarton = toggleCarton;
 window.abrirModalCarton = abrirModalCarton;
