@@ -10,6 +10,7 @@ let cantidadPermitida = 0;
 let promocionSeleccionada = null;
 let modoCartones = "libre";
 let cantidadFijaCartones = 1;
+let detectorIniciado = false;
 
 // Variables de sesión
 let adminSession = null;
@@ -344,50 +345,6 @@ function mostrarAlertaSesionDuplicada() {
 }
 
 // ==================== FIN NUEVAS FUNCIONES ====================
-
-// Función para forzar cierre remoto
-async function forzarCerrarSesionRemota() {
-  if (!confirm('⚠️ ¿Forzar cierre de todas las sesiones?\n\nEsto cerrará la sesión en TODOS los dispositivos.')) {
-    return;
-  }
-  
-  try {
-    const sessionToken = sessionStorage.getItem('admin_session_token');
-    
-    if (!sessionToken) {
-      alert('❌ No tienes sesión activa');
-      return;
-    }
-    
-    const response = await fetch(
-      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/update-session',
-      {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
-        },
-        body: JSON.stringify({ 
-          sessionToken,
-          action: "force_logout_all" 
-        })
-      }
-    );
-    
-    if (!response.ok) {
-      throw new Error('Error al forzar cierre');
-    }
-    
-    // Limpiar localmente
-    await cerrarSesionAdmin();
-    
-    alert('✅ Sesiones remotas cerradas. Ahora puedes iniciar sesión.');
-    
-  } catch (error) {
-    console.error('❌ Error forzando cierre:', error);
-    alert('❌ Error al forzar cierre de sesión');
-  }
-}
 
 
 // ==================== LOGIN CON DOBLE FACTOR ====================
@@ -1192,76 +1149,7 @@ function mostrarCampoOTP() {
   document.getElementById('otp-code').focus();
 }
 
-// Cancelar OTP
-function cancelarOTP() {
-  clearTimeout(otpTimeout);
-  
-  sessionStorage.removeItem('admin_email_temp');
-  
-  const otpContainer = document.getElementById('otp-container');
-  if (otpContainer) otpContainer.style.display = 'none';
-  
-  // Restaurar campos de contraseña
-  const passwordField = document.getElementById('admin-password').parentElement;
-  if (passwordField) passwordField.style.display = 'block';
-  
-  const loginButton = document.querySelector('button[onclick="loginAdmin()"]');
-  if (loginButton) loginButton.style.display = 'block';
-  
-  document.getElementById('admin-password').value = '';
-  document.getElementById('otp-code').value = '';
-  
-  const errorDiv = document.getElementById('admin-error');
-  if (errorDiv) errorDiv.textContent = '';
-  
-  document.getElementById('admin-password').focus();
-}
 
-// Función para reenviar OTP
-async function reenviarOTP() {
-  const email = sessionStorage.getItem('admin_email_temp');
-  const errorDiv = document.getElementById('admin-error');
-  
-  if (!email) {
-    errorDiv.textContent = '❌ Error: Email no encontrado';
-    errorDiv.className = 'error';
-    return;
-  }
-  
-  try {
-    errorDiv.textContent = '🔄 Reenviando código...';
-    errorDiv.className = 'info';
-    
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email,
-      options: { shouldCreateUser: false }
-    });
-    
-    if (error) {
-      errorDiv.textContent = 'Error reenviando código: ' + error.message;
-      errorDiv.className = 'error';
-      return;
-    }
-    
-    clearTimeout(otpTimeout);
-    otpTimeout = setTimeout(() => {
-      if (!sesionActiva) {
-        const errorDiv = document.getElementById('admin-error');
-        errorDiv.innerHTML = '⏰ <strong>Código expirado</strong><br>El código OTP ha expirado. Vuelve a intentar.';
-        errorDiv.className = 'error';
-        cancelarOTP();
-      }
-    }, OTP_TIMEOUT);
-    
-    errorDiv.innerHTML = '✅ <strong>Código reenviado!</strong> Revisa tu correo.';
-    errorDiv.className = 'success';
-    
-  } catch (error) {
-    console.error('Error reenviando OTP:', error);
-    errorDiv.textContent = '❌ Error reenviando código';
-    errorDiv.className = 'error';
-  }
-}
 
 // Generar token único para sesión
 function generateSessionToken() {
@@ -1359,7 +1247,11 @@ function resetInactivityTimer() {
 
 // Eventos para detectar actividad
 function iniciarDetectorActividad() {
+  if (detectorIniciado) return; // ⛔ evita doble ejecución
+  detectorIniciado = true;
+
   console.log('👀 Iniciando detector de actividad');
+
   ['click', 'mousemove', 'keypress', 'scroll'].forEach(event => {
     document.addEventListener(event, () => {
       if (sesionActiva) {
@@ -1369,6 +1261,7 @@ function iniciarDetectorActividad() {
     });
   });
 }
+
 
 // Limpiar storage temporal
 function limpiarStorageTemporal() {
@@ -1935,29 +1828,46 @@ function actualizarPreseleccion() {
     (cant * precioPorCarton).toFixed(2);
 }
 
-// botones + y −
-document.getElementById('btnMas').onclick = () => {
-  if (modoCartones === 'fijo') {
-    return;
-  }
-  document.getElementById('cantidadCartones').stepUp();
-  limpiarPromoPorCambioCantidad();
-};
+document.addEventListener('DOMContentLoaded', () => {
 
-document.getElementById('btnMenos').onclick = () => {
-  if (modoCartones === 'fijo') {
-    return;
-  }
-  document.getElementById('cantidadCartones').stepDown();
-  limpiarPromoPorCambioCantidad();
-};
+  const btnMas = document.getElementById('btnMas');
+  const btnMenos = document.getElementById('btnMenos');
+  const inputCantidad = document.getElementById('cantidadCartones');
 
-document.getElementById('cantidadCartones').addEventListener('input', function() {
-  if (modoCartones === 'fijo') {
-    this.value = cantidadFijaCartones;
+  if (btnMas && inputCantidad) {
+    btnMas.onclick = () => {
+      if (modoCartones === 'fijo') return;
+      inputCantidad.stepUp();
+      limpiarPromoPorCambioCantidad();
+    };
   }
-  limpiarPromoPorCambioCantidad();
+
+  if (btnMenos && inputCantidad) {
+    btnMenos.onclick = () => {
+      if (modoCartones === 'fijo') return;
+      inputCantidad.stepDown();
+      limpiarPromoPorCambioCantidad();
+    };
+  }
+
+  if (inputCantidad) {
+    inputCantidad.addEventListener('input', function () {
+      if (modoCartones === 'fijo') {
+        this.value = cantidadFijaCartones;
+      }
+      limpiarPromoPorCambioCantidad();
+    });
+  }
+
+  // ⏰ Hora Venezuela (mover aquí evita errores en móviles)
+  actualizarHoraVenezuela();
+  setInterval(actualizarHoraVenezuela, 1000);
+
+  // 🛡️ Detector de actividad SOLO cuando el DOM existe
+  iniciarDetectorActividad();
+
 });
+
 
 function limpiarPromoPorCambioCantidad() {
   if (promocionSeleccionada) {
@@ -2780,8 +2690,6 @@ function actualizarHoraVenezuela() {
   contenedor.textContent = `📅 ${formato}`;
 }
 
-actualizarHoraVenezuela();
-setInterval(actualizarHoraVenezuela, 1000);
 
 async function cargarLinkWhatsapp() {
   const { data, error } = await supabase
@@ -3407,10 +3315,6 @@ async function borrarCartones() {
     status.innerHTML = '';
   }, 5000);
 }
-
-// ==================== INICIALIZACIÓN ====================
-// Inicializar detector de actividad
-iniciarDetectorActividad();
 
 // ==================== FUNCIÓN entrarAdmin ====================
 async function entrarAdmin() {
