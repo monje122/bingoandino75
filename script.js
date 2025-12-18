@@ -1105,7 +1105,7 @@ function iniciarVerificacionPeriodicaSesion() {
       const result = await response.json();
       
       if (!result.valid) {
-        console.log('🚫 Sesión inválida en verificación periódica:', result.reason);
+        console.log('🚫 Sesión inválida en verificación periódica:', result.reason || result.error || 'desconocida');
         await cerrarSesionAdmin();
         clearInterval(verificacionInterval);
       } else if (result.expiresAt) {
