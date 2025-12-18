@@ -638,6 +638,11 @@ async function verificarOTP() {
     sessionStorage.setItem('admin_email', result.email);
     sessionStorage.setItem('session_expires', result.expiresAt);
     sessionStorage.setItem('device_id', result.deviceId);
+    localStorage.setItem('admin_session_token', result.sessionToken);
+    
+    localStorage.setItem('admin_email', result.email);
+    localStorage.setItem('session_expires', result.expiresAt);
+    localStorage.setItem('admin_device_id', result.deviceId);
     
     // Actualizar deviceId si es necesario
     if (result.deviceId && result.deviceId !== deviceId) {
@@ -1076,8 +1081,9 @@ function iniciarVerificacionPeriodicaSesion() {
   verificacionInterval = setInterval(async () => {
     if (!sesionActiva) return;
     
-    const sessionToken = sessionStorage.getItem('admin_session_token');
-    const deviceId = sessionStorage.getItem('device_id') || localStorage.getItem('admin_device_id');
+    const sessionToken = sessionStorage.getItem('admin_session_token') || localStorage.getItem('admin_session_token');
+const deviceId = sessionStorage.getItem('device_id') || localStorage.getItem('admin_device_id');
+
     
     if (!sessionToken || !deviceId) {
       console.log('❌ No hay token o deviceId, cerrando...');
