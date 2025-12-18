@@ -271,33 +271,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-// Función para crear la tabla de sesiones activas
-async function crearTablaSesiones() {
-  console.log('🔄 Creando/verificando tabla de sesiones...');
-  try {
-    // Intentar crear la tabla si no existe
-    const { error } = await supabase
-      .from('sesiones_activas')
-      .upsert([
-        {
-          tipo: 'admin',
-          user_id: null,
-          user_email: null,
-          session_token: null,
-          activa: false,
-          ultima_actividad: new Date().toISOString(),
-          login_timestamp: null
-        }
-      ], { onConflict: 'tipo' });
-      
-    if (error) {
-      console.warn('Nota: La tabla ya existe o hay error de estructura:', error.message);
-      // No es crítico, continuamos
-    }
-  } catch (e) {
-    console.warn('Error creando tabla sesiones:', e);
-  }
-}
+
 
 // ==================== NUEVA: VERIFICACIÓN SESIÓN ÚNICA POR USUARIO ====================
 // Función para verificar si el usuario YA tiene sesión activa (en cualquier navegador)
@@ -1773,7 +1747,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   console.log('🚀 Inicializando sistema...');
   
   // Crear tabla de sesiones si no existe
-  await crearTablaSesiones();
+  
   
   await obtenerTotalCartones();
   await cargarPrecioPorCarton();
