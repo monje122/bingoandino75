@@ -121,7 +121,7 @@ async function logoutAdminSilencioso() {
 
   try {
     if (email && deviceId) {
-      await fetch('https://dbkixcpwirjwjintkr.supabase.co/functions/v1/admin-auth', {
+      await fetch('https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
