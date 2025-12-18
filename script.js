@@ -2195,7 +2195,20 @@ async function cargarPanelAdmin() {
   document.getElementById('contadorCartones').innerText = 
     `Cartones disponibles: ${totalCartones - cartonesOcupados.length} de ${totalCartones}`;
 }
+document.getElementById('btn-recargar-panel').addEventListener('click', () => {
+  console.log('🔁 Recargando contenido del panel...');
+  
+  // Puedes validar que la sesión sigue activa
+  const token = sessionStorage.getItem('admin_session_token');
+  const email = sessionStorage.getItem('admin_email');
 
+  if (token && email) {
+    mostrarMensajeTemporal('♻️ Recargando panel...');
+    cargarPanelAdmin(); // Tu función que actualiza el contenido
+  } else {
+    mostrarMensajeTemporal('⚠️ No hay sesión activa.');
+  }
+});
 async function aprobarInscripcion(id, fila) {
   const { error } = await supabase
     .from('inscripciones')
