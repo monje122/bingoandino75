@@ -670,7 +670,7 @@ async function verificarOTP() {
       // Iniciar controles
       iniciarDetectorActividad();
       resetInactivityTimer();
-      iniciarVerificacionPeriodicaSesion();
+    
       
       // Cargar panel
       cargarPanelAdmin();
@@ -741,7 +741,6 @@ async function crearSesionUnicaOTP(email, deviceId) {
       // Iniciar controles
       iniciarDetectorActividad();
       resetInactivityTimer();
-      iniciarVerificacionPeriodicaSesion();
       
       // Cargar panel
       cargarPanelAdmin();
@@ -910,7 +909,6 @@ async function crearSesionDirecta(email, deviceId) {
       
       iniciarDetectorActividad();
       resetInactivityTimer();
-      iniciarVerificacionPeriodicaSesion();
       
       cargarPanelAdmin();
       
@@ -1030,7 +1028,6 @@ function proceedWithSession(sessionToken, email, expiresAt) {
     // Iniciar controles de sesión
     iniciarDetectorActividad();
     resetInactivityTimer();
-    iniciarVerificacionPeriodicaSesion();
   }, 1000);
 }
 // Nueva función para mostrar panel seguro
@@ -1259,7 +1256,7 @@ async function verificarSesionInicial() {
       document.getElementById('admin-login').classList.add('oculto');
       document.getElementById('admin-panel').classList.remove('oculto');
       await cargarPanelAdmin();
-      iniciarVerificacionPeriodicaSesion();
+     
     } else {
       console.log('⚠️ Sesión inválida, limpiando...');
       await cerrarSesionAdmin();
@@ -3283,7 +3280,7 @@ async function entrarAdmin() {
     mostrarPanelAdminSeguro(sessionToken);
     iniciarDetectorActividad();
     resetInactivityTimer();
-    iniciarVerificacionPeriodicaSesion();
+    
     return;
   }
   
