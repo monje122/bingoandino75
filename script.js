@@ -1072,59 +1072,6 @@ async function mostrarPanelAdminSeguro(sessionToken) {
 // Función para verificación periódica de sesión
 let verificacionInterval = null;
 
-
-function iniciarVerificacionPeriodicaSesion() {
-  if (verificacionInterval) {
-    clearInterval(verificacionInterval);
-  }
-  
-  verificacionInterval = setInterval(async () => {
-    if (!sesionActiva) return;
-    
-    const sessionToken = sessionStorage.getItem('admin_session_token') || localStorage.getItem('admin_session_token');
-const deviceId = sessionStorage.getItem('device_id') || localStorage.getItem('admin_device_id');
-
-    
-    if (!sessionToken || !deviceId) {
-      console.log('❌ No hay token o deviceId, cerrando...');
-      await cerrarSesionAdmin();
-      return;
-    }
-    
-    try {
-      // Verificar con el backend
-      const response = await fetch(
-        'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/verify-session',
-        {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJjd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
-          },
-          body: JSON.stringify({ 
-            sessionToken,
-            deviceId 
-          })
-        }
-      );
-      
-      const result = await response.json();
-      
-      if (!result.valid) {
-        console.log('🚫 Sesión inválida en verificación periódica:', result.reason || result.error || 'desconocida');
-        await cerrarSesionAdmin();
-        clearInterval(verificacionInterval);
-      } else if (result.expiresAt) {
-        sessionStorage.setItem('session_expires', result.expiresAt);
-      }
-      
-    } catch (error) {
-      console.error('❌ Error verificando sesión:', error);
-      // No cerrar por error de red, solo reintentar
-    }
-  }, 100000); // Verificar cada 30 segundos
-}
-// Mostrar campo OTP
 function mostrarCampoOTP() {
   const loginForm = document.getElementById('login-fields');
   const email = sessionStorage.getItem('admin_email_temp') || '';
