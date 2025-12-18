@@ -103,6 +103,41 @@ async function setConfigValue(clave, value) {
 
 // ==================== SISTEMA DE SESIÓN ÚNICA ====================
 // Función para cerrar sesión
+ async function cerrarSesionAdmin() {
+  // Cierre “silencioso” para expiración / sesión inválida
+  // No pedir confirmación, solo cerrar.
+  await logoutAdminSilencioso();
+}
+
+// Igual que logoutAdmin, pero sin confirm()
+async function logoutAdminSilencioso() {
+  const email = sessionStorage.getItem('admin_email');
+  const deviceId =
+    sessionStorage.getItem('device_id') ||
+    localStorage.getItem('admin_device_id') ||
+    localStorage.getItem('device_id');
+
+  const sessionToken = sessionStorage.getItem('admin_session_token');
+
+  try {
+    if (email && deviceId) {
+      await fetch('https://dbkixcpwirjwjintkr.supabase.co/functions/v1/admin-auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({ action: 'logout', email, deviceId, sessionToken })
+      });
+    }
+  } catch (e) {
+    console.warn('Logout silencioso falló (red), limpiando local igual:', e);
+  } finally {
+    clearAdminSession();
+    resetToLoginState();
+  }
+}
+
 // ========== FUNCIÓN LOGOUT COMPATIBLE CON TU CÓDIGO ==========
 async function logoutAdmin() {
   // TÚ usas sessionStorage, no localStorage:
@@ -268,46 +303,37 @@ async function crearTablaSesiones() {
 // Función para verificar si el usuario YA tiene sesión activa (en cualquier navegador)
 async function verificarSesionAdmin() {
   const sessionToken = sessionStorage.getItem('admin_session_token');
-  const deviceId = sessionStorage.getItem('device_id');
-  
-  if (!sessionToken || !deviceId) {
-    console.log('❌ No hay token o ID de dispositivo');
-    return false;
-  }
-  
+  const deviceId =
+    sessionStorage.getItem('device_id') ||
+    localStorage.getItem('admin_device_id');
+
+  if (!sessionToken || !deviceId) return false;
+
   try {
     const response = await fetch(
       'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/verify-session',
       {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
         },
-        body: JSON.stringify({ 
-          sessionToken,
-          deviceId // Validar que sea el mismo dispositivo
-        })
+        body: JSON.stringify({ sessionToken, deviceId })
       }
     );
-    
-    if (!response.ok) {
-      return false;
-    }
-    
+
+    if (!response.ok) return false;
+
     const result = await response.json();
-    
-    if (result.expiresAt) {
-      sessionStorage.setItem('session_expires', result.expiresAt);
-    }
-    
+
+    if (result.expiresAt) sessionStorage.setItem('session_expires', result.expiresAt);
+
     return result.valid === true && result.sameDevice === true;
-    
-  } catch (error) {
-    console.error('❌ Error verificando sesión:', error);
+  } catch {
     return false;
   }
 }
+
 
 // Función para mostrar alerta de sesión duplicada
 function mostrarAlertaSesionDuplicada() {
@@ -972,20 +998,21 @@ function cancelarLogin() {
 }
 // Función auxiliar para generar ID de dispositivo
 function generateDeviceId() {
-  // Usar localStorage para persistir ID del dispositivo
-  let deviceId = localStorage.getItem('device_id');
-  
+  let deviceId = localStorage.getItem('admin_device_id');
+
   if (!deviceId) {
-    // Generar ID único basado en userAgent + timestamp + random
-    deviceId = 'device_' + 
-               btoa(navigator.userAgent).substring(0, 20) + '_' + 
-               Date.now() + '_' + 
-               Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('device_id', deviceId);
+    deviceId =
+      'device_' +
+      btoa(navigator.userAgent).substring(0, 20) + '_' +
+      Date.now() + '_' +
+      Math.random().toString(36).substr(2, 9);
+
+    localStorage.setItem('admin_device_id', deviceId);
   }
-  
+
   return deviceId;
 }
+
 
 // Función para obtener IP del cliente (simplificada)
 async function getClientIP() {
