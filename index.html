@@ -448,16 +448,16 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<!-- Crear la instancia global de Supabase y guardarla en window.supabase -->
+
 <script>
   const supabaseUrl = 'https://dbkixcpwirjwjvjintkr.supabase.co';
   const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho';
 
-  // ✅ Esto crea UNA SOLA instancia global accesible desde todos los archivos
+
   window.supabase = supabase.createClient(supabaseUrl, supabaseKey);
 </script>
 
-<!-- Cargar tu archivo script.js que usará esa instancia -->
+
 <script src="script.js"></script>
 
 </body>
