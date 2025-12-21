@@ -13,8 +13,6 @@ let detectorIniciado = false;
 // Variables de sesión
 let adminSession = null;
 let sesionActiva = false;
-// Modo directo: salta OTP y entra solo con email + contraseña
-const MODO_DIRECTO_SIN_OTP = true;
 
 const CONFIG_OTP = {
   ACTIVADO: true,                     // Activar/desactivar OTP
@@ -348,33 +346,12 @@ function mostrarAlertaSesionDuplicada() {
 
 
 // ==================== LOGIN CON DOBLE FACTOR ====================
-function cargarPanelAdmin() {
-  // Ocultar el login
-  document.getElementById("admin-login").classList.add("oculto");
-
-  // Mostrar el panel de administración
-  document.getElementById("admin-panel").classList.remove("oculto");
-
-  // Mostrar el correo del admin en el panel
-  const adminEmail = sessionStorage.getItem('admin_email') || '';
-  document.getElementById('admin-email-display').textContent = adminEmail;
-
-  // Si tienes lógica adicional para cargar datos del panel, colócala aquí
-  cargarDatosPanelAdmin?.(); // (opcional, si tienes esta función)
-}
-
 // ==================== LOGIN SEGURO CON EDGE FUNCTION ====================
 async function loginAdmin() {
   const email = document.getElementById('admin-email').value.trim();
   const password = document.getElementById('admin-password').value;
   const errorDiv = document.getElementById('admin-error');
   
-    let deviceId = localStorage.getItem('admin_device_id');
-    if (!deviceId) {
-      deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('admin_device_id', deviceId);
-    }
-    
   errorDiv.textContent = '';
   errorDiv.className = '';
   errorDiv.style.whiteSpace = 'pre-line';
@@ -384,49 +361,102 @@ async function loginAdmin() {
     errorDiv.className = 'error';
     return;
   }
- try {
- if (MODO_DIRECTO_SIN_OTP) {
-  console.log('🚪 MODO DIRECTO ACTIVADO: Iniciando sin OTP...');
-
-  const response = await fetch(
-    'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
-    {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
-      },
-      body: JSON.stringify({ 
-        email: email.toLowerCase().trim(), 
-        password: password,
-        deviceId: deviceId,
-        action: 'verify_credentials'
-      })
-    }
-  );
-
-  const result = await response.json();
-   console.log("📦 Resultado completo:", result);
-
-  if (!response.ok || result.success !== true) {
-    errorDiv.textContent = result.error || 'Error de autenticación';
-    errorDiv.className = 'error';
-    document.getElementById('admin-password').value = '';
-    return;
-  }
-
-  // Guardar sesión y cargar panel
-  sessionStorage.setItem('admin_session_token', result.sessionToken);
-  sessionStorage.setItem('admin_email', result.email);
-  sessionStorage.setItem('device_id', result.deviceId);
   
-  adminSession = { email: result.email, token: result.sessionToken };
-  sesionActiva = true;
-
-  cargarPanelAdmin();
-  return;
-}
-
+  console.log('🔄 Iniciando login con sesión única + OTP...');
+  
+  try {
+    errorDiv.textContent = '🔐 Verificando credenciales...';
+    errorDiv.className = 'info';
+    
+    // Obtener o generar deviceId único
+    let deviceId = localStorage.getItem('admin_device_id');
+    if (!deviceId) {
+      deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem('admin_device_id', deviceId);
+    }
+    
+    console.log('📱 Device ID:', deviceId);
+    
+    // ========== PASO 1: VERIFICAR CREDENCIALES ==========
+    errorDiv.textContent = '🔐 Verificando email y contraseña...';
+    
+    const response = await fetch(
+      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
+      {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+        },
+        body: JSON.stringify({ 
+          email: email.toLowerCase().trim(), 
+          password: password,
+          deviceId: deviceId,
+          action: 'verify_credentials' // Nueva acción para solo verificar
+        })
+      }
+    );
+    
+    console.log('📡 Estado respuesta:', response.status);
+    const result = await response.json();
+    console.log('📦 Resultado:', result);
+    
+    if (!response.ok) {
+      // MANEJO DE ERRORES ESPECÍFICOS
+      if (result.error === "SESION_ACTIVA_OTRO_DISPOSITIVO") {
+        errorDiv.innerHTML = `
+          ⚠️ <strong>¡Ya tienes una sesión activa!</strong><br><br>
+          No puedes iniciar sesión en múltiples dispositivos/navegadores.<br><br>
+          <strong>Solución:</strong><br>
+          1. Ve al otro dispositivo/navegador<br>
+          2. Cierra sesión allí primero<br>
+          3. Intenta de nuevo aquí
+        `;
+        errorDiv.className = 'warning';
+      } else if (result.error === "SESION_ACTIVA") {
+        errorDiv.innerHTML = '⚠️ Ya tienes una sesión activa en otro lugar';
+        errorDiv.className = 'warning';
+      } else {
+        errorDiv.textContent = result.error || 'Error de autenticación';
+        errorDiv.className = 'error';
+      }
+      
+      document.getElementById('admin-password').value = '';
+      return;
+    }
+    
+    // ========== PASO 2: CREDENCIALES CORRECTAS - ENVIAR OTP ==========
+    console.log('✅ Credenciales verificadas correctamente');
+    
+    // Guardar credenciales temporalmente
+    sessionStorage.setItem('pending_email', email);
+    sessionStorage.setItem('pending_deviceId', deviceId);
+    sessionStorage.setItem('pending_password', password); // Solo para referencia
+    
+    errorDiv.innerHTML = '✅ <strong>Credenciales correctas</strong><br>📧 Enviando código de verificación...';
+    errorDiv.className = 'success';
+    
+    // Enviar OTP
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: email,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: window.location.origin
+      }
+    });
+    
+    if (otpError) {
+      console.error('❌ Error enviando OTP:', otpError);
+      
+      // Fallback: continuar sin OTP si hay error
+      errorDiv.textContent = '⚠️ Error enviando OTP. Continuando sin verificación...';
+      
+      // Proceder directamente a crear sesión
+      await crearSesionDirecta(email, deviceId);
+      return;
+    }
+    
+    console.log('✅ OTP enviado a:', email);
     
     // ========== PASO 3: MOSTRAR INTERFAZ OTP ==========
     mostrarInterfazOTP(email);
