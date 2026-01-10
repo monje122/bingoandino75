@@ -1698,7 +1698,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   
   // Crear tabla de sesiones si no existe
   
-  
+  document.getElementById('modal-terminos').classList.remove('oculto');
   await obtenerTotalCartones();
   await cargarPrecioPorCarton();
   await cargarConfiguracionModoCartones();
@@ -1727,7 +1727,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await cargarLinkWhatsapp();
   
   // Mostrar términos
-  document.getElementById('modal-terminos').classList.remove('oculto');
+  
   
   console.log('✅ Sistema inicializado correctamente');
 });
