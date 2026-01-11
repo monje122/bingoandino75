@@ -2028,6 +2028,12 @@ async function enviarComprobante() {
 
     const archivo = document.getElementById('comprobante').files[0];
     if (!archivo) throw new Error('Debes subir un comprobante');
+    const pagoTelefono = document.getElementById('pagoTelefono').value.trim();
+const pagoCedula = document.getElementById('pagoCedula').value.trim();
+const pagoBanco = document.getElementById('pagoBanco').value.trim();
+if (!pagoTelefono || !pagoCedula || !pagoBanco) {
+  throw new Error('Debes ingresar todos los datos de pago móvil:\n- Teléfono\n- Cédula\n- Banco');
+}
 
     const ext = archivo.name.split('.').pop();
     const nombreArchivo = `${usuario.cedula}-${Date.now()}.${ext}`;
@@ -2066,7 +2072,10 @@ async function enviarComprobante() {
       monto_bs: monto,
       usa_promo: !!promo,
       promo_desc: promo ? promo.descripcion : null,
-      precio_unitario_bs: promo ? null : (precioPorCarton || 0) 
+      precio_unitario_bs: promo ? null : (precioPorCarton || 0),
+      pago_telefono: pagoTelefono,
+      pago_cedula: pagoCedula,
+      pago_banco: pagoBanco
     }]);
 
     if (errorInsert) {
@@ -2163,6 +2172,14 @@ async function cargarPanelAdmin() {
             <img src="${item.comprobante}" alt="Comp.">
           </a></td>
       <td>
+     
+  <div onclick="copiarTexto(this)" title="Clic para copiar">
+     <strong>${item.pago_telefono || '-'}</strong><br>
+     <strong>${item.pago_cedula || '-'}</strong><br>
+     <strong>${item.pago_banco || '-'}</strong>
+  </div>
+     <td>
+
         <span class="estado-circulo ${item.estado === 'aprobado' ? 'verde' : 'rojo'}"></span>
         <button class="btn-accion btn-aprobar" title="Aprobar">&#x2705;</button>
         <button class="btn-accion btn-rechazar" title="Rechazar">&#x274C;</button>
@@ -3266,6 +3283,14 @@ async function borrarCartones() {
   setTimeout(() => {
     status.innerHTML = '';
   }, 5000);
+}
+
+
+function copiarTexto(elem) {
+  const text = elem.innerText || elem.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('📋 Copiado:\n' + text);
+  });
 }
 
 // ==================== FUNCIÓN entrarAdmin ====================
