@@ -57,21 +57,21 @@ let totalCartones = 0;
 // ==================== VERSIÓN MÁS SIMPLE ====================
 let contador = 0;
 
-// Configurar después de cargar
+// Registrar listener en el logo después de cargar
 setTimeout(() => {
   const logo = document.querySelector('#bienvenida img, .logo, h1');
-  
+
   if (logo) {
     logo.addEventListener('click', () => {
       contador++;
-      
-      // Reset en 3 segundos
+
+      // Reset del contador en 3 segundos
       setTimeout(() => { contador = 0; }, 3000);
-      
+
       // Si son 7 clicks
       if (contador === 7) {
         contador = 0;
-        // Mostrar botón oculto
+
         const botonAdmin = document.getElementById('boton-admin-oculto');
         if (botonAdmin) {
           botonAdmin.style.display = 'inline-block';
@@ -82,6 +82,17 @@ setTimeout(() => {
   }
 }, 1000);
 
+// Registrar listener del botón Admin **solo una vez**
+const botonAdmin = document.getElementById('boton-admin-oculto');
+if (botonAdmin) {
+  botonAdmin.addEventListener('click', async () => {
+    if (sesionActiva) {
+      await entrarAdmin(); // Abre panel admin si ya hay sesión activa
+    } else {
+      mostrarVentana('admin-login'); // Solo muestra el login
+    }
+  });
+}
 // ==================== FUNCIONES DE CONFIGURACIÓN ====================
 async function getConfigValue(clave, fallback = null) {
   const { data, error } = await supabase
@@ -276,7 +287,10 @@ document.addEventListener('DOMContentLoaded', function() {
 // ==================== NUEVA: VERIFICACIÓN SESIÓN ÚNICA POR USUARIO ====================
 // Función para verificar si el usuario YA tiene sesión activa (en cualquier navegador)
 async function verificarSesionAdmin() {
-  const sessionToken = sessionStorage.getItem('admin_session_token');
+  const sessionToken =
+    sessionStorage.getItem('admin_session_token') ||
+    localStorage.getItem('admin_session_token');
+
   const deviceId =
     sessionStorage.getItem('device_id') ||
     localStorage.getItem('admin_device_id');
@@ -290,7 +304,8 @@ async function verificarSesionAdmin() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
         },
         body: JSON.stringify({ sessionToken, deviceId })
       }
@@ -299,11 +314,16 @@ async function verificarSesionAdmin() {
     if (!response.ok) return false;
 
     const result = await response.json();
+    console.log('VERIFY SESSION:', result);
 
-    if (result.expiresAt) sessionStorage.setItem('session_expires', result.expiresAt);
+    if (result.expiresAt) {
+      sessionStorage.setItem('session_expires', result.expiresAt);
+      localStorage.setItem('session_expires', result.expiresAt);
+    }
 
     return result.valid === true && result.sameDevice === true;
-  } catch {
+  } catch (err) {
+    console.error('Error verificando sesión:', err);
     return false;
   }
 }
@@ -674,6 +694,7 @@ async function verificarOTP() {
       
       // Cargar panel
       cargarPanelAdmin();
+      activarRefrescoAutomaticoAdmin();
       
     }, 1000);
     
@@ -786,7 +807,7 @@ async function reenviarOTP() {
 }
 
 function cancelarOTP() {
-  // Limpiar timer
+  // Limpir timer
   clearInterval(window.otpTimerInterval);
   
   // Limpiar datos temporales
@@ -930,7 +951,7 @@ async function forzarCerrarSesionRemota() {
     errorDiv.textContent = '🔄 Forzando cierre de sesión remota...';
     errorDiv.className = 'info';
     
-    // Aquí necesitarías crear otra Edge Function o modificar la existente
+    // Aquí necesitarías crear otra   Edge Function o modificar la existente
     // para forzar el cierre de todas las sesiones
     
     // Por ahora, usamos un enfoque simple: limpiar la tabla
@@ -951,7 +972,7 @@ async function forzarCerrarSesionRemota() {
       errorDiv.innerHTML = '✅ Sesiones remotas cerradas.<br>Ahora puedes iniciar sesión.';
       errorDiv.className = 'success';
       
-      // Recargar la página después de 2 segundos
+      // recargar la página después de 2 segundos
       setTimeout(() => {
         location.reload();
       }, 2000);
@@ -1033,11 +1054,18 @@ function proceedWithSession(sessionToken, email, expiresAt) {
 // Nueva función para mostrar panel seguro
 async function mostrarPanelAdminSeguro(sessionToken) {
   console.log('🎉 Mostrando panel admin seguro');
-  
+
+  // Ocultar todas las secciones visibles
+  document.querySelectorAll('section').forEach(sec => sec.classList.add('oculto'));
+
+  // Ocultar login si estaba abierto
   document.getElementById('admin-login').classList.add('oculto');
-  document.getElementById('admin-panel').classList.remove('oculto');
-  
-  // Mostrar info de sesión segura
+
+  // Mostrar panel admin
+  const panel = document.getElementById('admin-panel');
+  panel.classList.remove('oculto');
+
+  // Insertar info de sesión
   const sessionInfo = document.createElement('div');
   sessionInfo.id = 'session-info';
   sessionInfo.style.cssText = `
@@ -1054,15 +1082,15 @@ async function mostrarPanelAdminSeguro(sessionToken) {
     <small>Autenticación vía Edge Function</small><br>
     <small>Token: ${sessionToken?.substring(0, 25)}...</small>
   `;
-  
-  const panel = document.getElementById('admin-panel');
   const firstElement = panel.querySelector('h2').nextElementSibling;
-  if (firstElement) {
-    panel.insertBefore(sessionInfo, firstElement.nextSibling);
-  }
+  if (firstElement) panel.insertBefore(sessionInfo, firstElement.nextSibling);
 
-  // Cargar datos del panel
+  // Cargar datos del panel y refresco automático
   await cargarPanelAdmin();
+  activarRefrescoAutomaticoAdmin();
+
+  // Llevar la ventana al top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 // Función para verificar OTP
 
@@ -1162,6 +1190,7 @@ async function mostrarPanelAdminOTP(sessionToken) {
   
   // Cargar datos del panel
   await cargarPanelAdmin();
+  activarRefrescoAutomaticoAdmin();
 }
 
 
@@ -1232,41 +1261,86 @@ function limpiarStorageTemporal() {
 // ==================== VERIFICACIÓN INICIAL ====================
 async function verificarSesionInicial() {
   console.log('🔍 Verificando sesión inicial al cargar...');
-  
-  const sessionToken = sessionStorage.getItem('admin_session_token');
-  
+
+  // Ocultar panel y login mientras se verifica
+  document.getElementById('admin-panel')?.classList.add('oculto');
+  document.getElementById('admin-login')?.classList.add('oculto');
+  document.getElementById('bienvenida')?.classList.remove('oculto');
+
+  const sessionToken =
+    sessionStorage.getItem('admin_session_token') ||
+    localStorage.getItem('admin_session_token');
+
   if (!sessionToken) {
-    console.log('ℹ️ No hay token en sessionStorage');
+    console.log('ℹ️ No hay token guardado');
     return;
   }
-  
+
   try {
-    // Verificar con Edge Function
     const esValida = await verificarSesionAdmin();
-    
+
     if (esValida) {
-      const email = sessionStorage.getItem('admin_email');
-      console.log('✅ Sesión válida encontrada para:', email);
-      
+      const email =
+        sessionStorage.getItem('admin_email') ||
+        localStorage.getItem('admin_email');
+
+      console.log('✅ Sesión válida guardada para:', email);
+
       adminSession = { email, token: sessionToken };
       sesionActiva = true;
-      document.getElementById('admin-email-display').textContent = email;
+
+      if (document.getElementById('admin-email-display')) {
+        document.getElementById('admin-email-display').textContent = email;
+      }
+
+      await cargarPanelAdmin();
+      activarRefrescoAutomaticoAdmin();
       iniciarDetectorActividad();
       resetInactivityTimer();
-      document.getElementById('admin-login').classList.add('oculto');
-      document.getElementById('admin-panel').classList.remove('oculto');
-      await cargarPanelAdmin();
-     
-    } else {
-      console.log('⚠️ Sesión inválida, limpiando...');
-      await cerrarSesionAdmin();
-    }
-  } catch (error) {
-    console.error('❌ Error verificando sesión inicial:', error);
-    await cerrarSesionAdmin();
-  }
-}
 
+      // **IMPORTANTE:** No abrir el panel automáticamente
+      // Solo deja la sesión activa lista para cuando el usuario haga clic en Admin
+      return;
+
+    } else {
+  console.log('⚠️ Sesión inválida, limpiando...');
+
+  sessionStorage.removeItem('admin_session_token');
+  sessionStorage.removeItem('admin_email');
+  sessionStorage.removeItem('session_expires');
+  sessionStorage.removeItem('device_id');
+
+  localStorage.removeItem('admin_session_token');
+  localStorage.removeItem('admin_email');
+  localStorage.removeItem('session_expires');
+
+  sesionActiva = false;
+  adminSession = null;
+
+  document.getElementById('admin-login')?.classList.add('oculto');
+  document.getElementById('admin-panel')?.classList.add('oculto');
+  document.getElementById('bienvenida')?.classList.remove('oculto');
+}
+ } catch (error) {
+  console.error('❌ Error verificando sesión inicial:', error);
+
+  sessionStorage.removeItem('admin_session_token');
+  sessionStorage.removeItem('admin_email');
+  sessionStorage.removeItem('session_expires');
+  sessionStorage.removeItem('device_id');
+
+  localStorage.removeItem('admin_session_token');
+  localStorage.removeItem('admin_email');
+  localStorage.removeItem('session_expires');
+
+  sesionActiva = false;
+  adminSession = null;
+
+  document.getElementById('admin-login')?.classList.add('oculto');
+  document.getElementById('admin-panel')?.classList.add('oculto');
+  document.getElementById('bienvenida')?.classList.remove('oculto');
+}
+}
 // ==================== FUNCIONES FALTANTES QUE NECESITA EL HTML ====================
 
 // Función para ver lista de aprobados
@@ -1485,7 +1559,7 @@ async function verHuerfanos() {
   
   try {
     const { data, error } = await supabase.rpc('rpc_listar_cartones_huerfanos', {
-      _min_age: '0 minutes'
+      _min_age: '5 minutes'
     });
     
     if (error) throw error;
@@ -1565,7 +1639,7 @@ async function liberarHuerfanos() {
   
   try {
     const { data, error } = await supabase.rpc('rpc_liberar_cartones_huerfanos', {
-      _min_age: '0 minutes'
+      _min_age: '5 minutes'
     });
     
     if (error) throw error;
@@ -1697,8 +1771,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   console.log('🚀 Inicializando sistema...');
   
   // Crear tabla de sesiones si no existe
-  
-  document.getElementById('modal-terminos').classList.remove('oculto');
+   document.getElementById('modal-terminos').classList.remove('oculto');
+  await cargarBarraProgresoInicio();
+await cargarConfigBarraProgresoAdmin();
+  cargarDatosClienteLocal();
+  activarProgresoCartonesRealtime();
+  await cargarImagenPremiosInicio();
   await obtenerTotalCartones();
   await cargarPrecioPorCarton();
   await cargarConfiguracionModoCartones();
@@ -1727,7 +1805,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await cargarLinkWhatsapp();
   
   // Mostrar términos
-  
+ 
   
   console.log('✅ Sistema inicializado correctamente');
 });
@@ -1830,6 +1908,10 @@ function isTrue(v) {
 }
 
 async function mostrarVentana(id) {
+  if (id === 'top-compradores') {
+  await cargarTopCompradores();
+     activarTopCompradoresRealtime()
+}
   if (id === 'admin') {
     await entrarAdmin();
     return;
@@ -1858,6 +1940,7 @@ async function mostrarVentana(id) {
     if (usuario.cartones.length !== requerido) {
       alert(`Debes elegir exactamente ${requerido} cartones antes de continuar.`);
       return;
+      
     }
   }
 
@@ -1865,6 +1948,10 @@ async function mostrarVentana(id) {
   document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
   const target = document.getElementById(id);
   if (target) target.classList.remove('oculto');
+  window.scrollTo({
+  top: 0,
+  behavior: 'smooth'
+});
 
   if (id === 'cantidad') {
     promocionSeleccionada = null;
@@ -1876,6 +1963,7 @@ async function mostrarVentana(id) {
     const promo = getPromocionSeleccionada();
     const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
     document.getElementById('monto-pago').textContent = monto.toFixed(2);
+     iniciarContadorReserva(5);
   }
   
   if (id === 'cartones') {
@@ -1896,6 +1984,7 @@ function guardarDatosInscripcion() {
   usuario.cartones = [];
   mostrarVentana('cantidad')
   actualizarPreseleccion(); 
+  guardarDatosClienteLocal();
 }
 
 function confirmarCantidad() {
@@ -1930,6 +2019,14 @@ function confirmarCantidad() {
 
 // ==================== FUNCIONES DE CARTONES ====================
 async function cargarCartones() {
+  const { error: errorHuerfanos } = await supabase.rpc('rpc_liberar_cartones_huerfanos', {
+    _min_age: '5 minutes'
+  });
+
+  if (errorHuerfanos) {
+    console.error('Error liberando huérfanos:', errorHuerfanos);
+  }
+
   cartonesOcupados = await fetchTodosLosOcupados();
   const ocupadosSet = new Set(cartonesOcupados);
 
@@ -1946,51 +2043,82 @@ async function cargarCartones() {
     } else {
       carton.onclick = () => abrirModalCarton(i, carton);
     }
+
     contenedor.appendChild(carton);
   }
 
   await contarCartonesVendidos();
+
   actualizarContadorCartones(
     totalCartones,
     Number(document.getElementById('total-vendidos').textContent) || cartonesOcupados.length,
     usuario.cartones.length
   );
+
   actualizarMonto();
 }
 
-function toggleCarton(num, elem) {
+async function toggleCarton(num, elem) {
   const index = usuario.cartones.indexOf(num);
 
+  // Deseleccionar
   if (index >= 0) {
-    usuario.cartones.splice(index, 1);
-    elem.classList.remove('seleccionado');
+  usuario.cartones.splice(index, 1);
+  elem.classList.remove('seleccionado');
 
+  const { error: errorLiberar } = await supabase.rpc('rpc_liberar_reserva', {
+    _numero: num,
+    _cedula: usuario.cedula,
+    _partida_id: null
+  });
+ if (errorLiberar) {
+    console.error('Error liberando reserva:', errorLiberar);
+  }
+    
     document.querySelectorAll('.carton.bloqueado').forEach(c => {
+    const n = parseInt(c.textContent);
+    if (!cartonesOcupados.includes(n) && !usuario.cartones.includes(n)) {
+      c.classList.remove('bloqueado');
+      c.onclick = () => abrirModalCarton(n, c);
+    }
+  });
+    actualizarContadorCartones(totalCartones, cartonesOcupados.length, usuario.cartones.length);
+    actualizarMonto();
+    return;
+  }
+
+  // No permitir más de la cantidad elegida
+  if (usuario.cartones.length >= cantidadPermitida) return;
+
+  // Reservar en Supabase de forma segura
+  const { data, error } = await supabase.rpc('rpc_reservar_carton', {
+    _numero: num,
+    _cedula: usuario.cedula,
+    _partida_id: null
+  });
+
+  if (error || data !== true) {
+    alert('Ese cartón ya fue tomado por otra persona. Elige otro.');
+    await cargarCartones();
+    return;
+  }
+
+  usuario.cartones.push(num);
+  elem.classList.add('seleccionado');
+
+  if (usuario.cartones.length === cantidadPermitida) {
+    document.querySelectorAll('.carton').forEach(c => {
       const n = parseInt(c.textContent);
-      if (!cartonesOcupados.includes(n) && !usuario.cartones.includes(n)) {
-        c.classList.remove('bloqueado');
-        c.onclick = () => abrirModalCarton(n, c);
+      const yaSeleccionado = usuario.cartones.includes(n);
+      const yaOcupado = cartonesOcupados.includes(n);
+
+      if (!yaSeleccionado && !yaOcupado) {
+        c.classList.add('bloqueado');
+        c.onclick = null;
       }
     });
-  } else {
-    if (usuario.cartones.length >= cantidadPermitida) return;
-
-    usuario.cartones.push(num);
-    elem.classList.add('seleccionado');
-
-    if (usuario.cartones.length === cantidadPermitida) {
-      document.querySelectorAll('.carton').forEach(c => {
-        const n = parseInt(c.textContent);
-        const yaSeleccionado = usuario.cartones.includes(n);
-        const yaOcupado = cartonesOcupados.includes(n);
-
-        if (!yaSeleccionado && !yaOcupado) {
-          c.classList.add('bloqueado');
-          c.onclick = null;
-        }
-      });
-    }
   }
+
   actualizarContadorCartones(totalCartones, cartonesOcupados.length, usuario.cartones.length);
   actualizarMonto();
 }
@@ -2028,12 +2156,6 @@ async function enviarComprobante() {
 
     const archivo = document.getElementById('comprobante').files[0];
     if (!archivo) throw new Error('Debes subir un comprobante');
-    const pagoTelefono = document.getElementById('pagoTelefono').value.trim();
-const pagoCedula = document.getElementById('pagoCedula').value.trim();
-const pagoBanco = document.getElementById('pagoBanco').value.trim();
-if (!pagoTelefono || !pagoCedula || !pagoBanco) {
-  throw new Error('Debes ingresar todos los datos de pago móvil:\n- Teléfono\n- Cédula\n- Banco');
-}
 
     const ext = archivo.name.split('.').pop();
     const nombreArchivo = `${usuario.cedula}-${Date.now()}.${ext}`;
@@ -2043,19 +2165,6 @@ if (!pagoTelefono || !pagoCedula || !pagoBanco) {
     if (errorUpload) throw new Error('Error subiendo imagen');
 
     const urlPublica = `${supabaseUrl}/storage/v1/object/public/comprobantes/${nombreArchivo}`;
-
-    const rows = usuario.cartones.map(n => ({ numero: n }));
-    const { error: errInsertaCartones } = await supabase
-      .from('cartones')
-      .insert(rows);
-
-    if (errInsertaCartones) {
-      alert('Uno o más cartones ya fueron tomados por otra persona. Elige otros, por favor.');
-      usuario.cartones = [];
-      mostrarVentana('cartones');
-      await cargarCartones();
-      return;
-    }
 
     const promo = getPromocionSeleccionada();
     const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
@@ -2072,17 +2181,17 @@ if (!pagoTelefono || !pagoCedula || !pagoBanco) {
       monto_bs: monto,
       usa_promo: !!promo,
       promo_desc: promo ? promo.descripcion : null,
-      precio_unitario_bs: promo ? null : (precioPorCarton || 0),
-      pago_telefono: pagoTelefono,
-      pago_cedula: pagoCedula,
-      pago_banco: pagoBanco
+      precio_unitario_bs: promo ? null : (precioPorCarton || 0) 
     }]);
 
     if (errorInsert) {
-      await supabase.from('cartones').delete().in('numero', usuario.cartones);
+      await supabase.rpc('rpc_liberar_reserva', {
+  _cedula: usuario.cedula,
+  _partida_id: null
+});
       throw new Error('Error guardando la inscripción');
     }
-
+clearInterval(timerReserva);
     alert('Inscripción y comprobante enviados con éxito');
     location.reload();
   } catch (err) {
@@ -2104,7 +2213,7 @@ async function consultarCartones() {
     item.cartones.forEach(num => {
       const img = document.createElement('img');
       img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BINGOANDINO75_CARTON_${String(num).padStart(5, '0')}.jpg`;
-      img.style.width = '100px';
+      img.classList.add('carton-consulta-img');
       img.style.margin = '5px';
       cont.appendChild(img);
     });
@@ -2172,14 +2281,6 @@ async function cargarPanelAdmin() {
             <img src="${item.comprobante}" alt="Comp.">
           </a></td>
       <td>
-     
-  <div onclick="copiarTexto(this)" title="Clic para copiar">
-     <strong>${item.pago_telefono || '-'}</strong><br>
-     <strong>${item.pago_cedula || '-'}</strong><br>
-     <strong>${item.pago_banco || '-'}</strong>
-  </div>
-     <td>
-
         <span class="estado-circulo ${item.estado === 'aprobado' ? 'verde' : 'rojo'}"></span>
         <button class="btn-accion btn-aprobar" title="Aprobar">&#x2705;</button>
         <button class="btn-accion btn-rechazar" title="Rechazar">&#x274C;</button>
@@ -2211,6 +2312,8 @@ async function cargarPanelAdmin() {
   document.getElementById('contador-clientes').textContent = data.length;
   document.getElementById('contadorCartones').innerText = 
     `Cartones disponibles: ${totalCartones - cartonesOcupados.length} de ${totalCartones}`;
+  const pendientes = data.filter(item => item.estado === 'pendiente').length;
+document.getElementById('pendientes-count').textContent = pendientes;
 }
 document.getElementById('btn-recargar-panel').addEventListener('click', () => {
   cargarPanelAdmin();  // Llama directamente a la función que refresca el contenido
@@ -2405,10 +2508,10 @@ function abrirModalCarton(numero, elemento) {
   document.getElementById('modal-carton').classList.remove('oculto');
 
   const btn = document.getElementById('btnSeleccionarCarton');
-  btn.onclick = () => {
-    toggleCarton(cartonSeleccionadoTemporal, cartonElementoTemporal);
-    cerrarModalCarton();
-  };
+  btn.onclick = async () => {
+  await toggleCarton(cartonSeleccionadoTemporal, cartonElementoTemporal);
+  cerrarModalCarton();
+};
 }
 
 function cerrarModalCarton() {
@@ -2576,6 +2679,13 @@ function mostrarSeccion(id) {
   secciones.forEach(sec => sec.classList.add('oculto'));
   const target = document.getElementById(id);
   if (target) target.classList.remove('oculto');
+  window.scrollTo({
+  top: 0,
+  behavior: 'smooth'
+});
+    if (id === 'ganadores') {
+    cargarGanadores();
+  }
   
   const redes = document.getElementById('redes-sociales');
   if (redes) {
@@ -2659,7 +2769,21 @@ function actualizarHoraVenezuela() {
   contenedor.textContent = `📅 ${formato}`;
 }
 
+async function guardarLinkWhatsapp() {
+  const link = document.getElementById('inputWhatsapp').value.trim();
+  if (!link) return alert('Ingresa un enlace válido');
 
+  const { error } = await supabase
+    .from('configuracion')
+    .upsert([{ clave: 'link_whatsapp', valore: link }], { onConflict: 'clave' });
+
+  if (error) {
+    alert('Error guardando el enlace');
+    console.error(error);
+  } else {
+    alert('Enlace guardado');
+  }
+}
 async function cargarLinkWhatsapp() {
   const { data, error } = await supabase
     .from('configuracion')
@@ -3285,14 +3409,6 @@ async function borrarCartones() {
   }, 5000);
 }
 
-
-function copiarTexto(elem) {
-  const text = elem.innerText || elem.textContent;
-  navigator.clipboard.writeText(text).then(() => {
-    alert('📋 Copiado:\n' + text);
-  });
-}
-
 // ==================== FUNCIÓN entrarAdmin ====================
 async function entrarAdmin() {
   // Verificar si ya tiene sesión válida
@@ -3362,6 +3478,440 @@ function agregarBotonesAdicionalesAdmin() {
     
     loginSection.insertAdjacentHTML('beforeend', botonesHTML);
   }
+}
+let canalInscripciones = null;
+
+function activarRefrescoAutomaticoAdmin() {
+  if (canalInscripciones) return;
+
+  canalInscripciones = supabase
+    .channel('admin-inscripciones-realtime')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'inscripciones'
+      },
+      async (payload) => {
+        console.log('🔄 Cambio detectado en inscripciones:', payload);
+
+        if (sesionActiva && !document.getElementById('admin-panel').classList.contains('oculto')) {
+          await cargarPanelAdmin();
+        }
+      }
+    )
+    .subscribe();
+}
+let timerReserva = null;
+
+function iniciarContadorReserva(minutos = 5) {
+  const div = document.getElementById('contadorReserva');
+
+  let restante = minutos * 60;
+
+  clearInterval(timerReserva);
+
+  timerReserva = setInterval(() => {
+
+    const min = Math.floor(restante / 60);
+    const seg = restante % 60;
+
+    div.innerHTML =
+      `⏳ Reserva activa: ${min}:${seg.toString().padStart(2,'0')}`;
+
+    if (restante <= 60) {
+      div.style.background = 'rgba(239,71,111,.2)';
+      div.style.borderColor = '#ef476f';
+    }
+
+    if (restante <= 0) {
+      clearInterval(timerReserva);
+
+      div.innerHTML =
+        '⛔ Tiempo agotado. Los cartones fueron liberados.';
+
+      liberarReservaPorTiempo();
+    }
+
+    restante--;
+
+  }, 1000);
+}
+async function liberarReservaPorTiempo() {
+
+  try {
+
+    await supabase.rpc('rpc_liberar_reserva', {
+      _cedula: usuario.cedula,
+      _partida_id: null
+    });
+
+    usuario.cartones = [];
+
+    alert(
+      'Tu tiempo para enviar el comprobante expiró. Debes seleccionar nuevamente tus cartones.'
+    );
+
+    mostrarSeccion('cartones');
+
+    await cargarCartones();
+
+  } catch (err) {
+    console.error(err);
+  }
+}
+async function cargarTopCompradores() {
+  const { data, error } = await supabase
+    .from('inscripciones')
+    .select('nombre, cedula, telefono, cartones, estado')
+    .in('estado', ['pendiente', 'aprobado']);
+
+  const cont = document.getElementById('listaTopCompradores');
+  cont.innerHTML = '';
+
+  if (error) {
+    console.error(error);
+    cont.innerHTML = '<p>Error cargando top compradores.</p>';
+    return;
+  }
+
+  const ranking = {};
+
+  (data || []).forEach(item => {
+    const cedula = item.cedula || 'sin-cedula';
+    const cantidad = Array.isArray(item.cartones) ? item.cartones.length : 0;
+
+    if (!ranking[cedula]) {
+      ranking[cedula] = {
+        nombre: item.nombre || 'Sin nombre',
+        cedula,
+        telefono: item.telefono || '',
+        total: 0
+      };
+    }
+
+    ranking[cedula].total += cantidad;
+  });
+
+  const top = Object.values(ranking)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
+
+  if (!top.length) {
+    cont.innerHTML = '<p>No hay compradores todavía.</p>';
+    return;
+  }
+
+  cont.innerHTML = `
+    <ol class="top-compradores-lista">
+      ${top.map((p, i) => `
+        <li>
+          <strong>#${i + 1} ${p.nombre}</strong><br>
+          Cédula: ${p.cedula}<br>
+          Cartones comprados: <strong>${p.total}</strong>
+        </li>
+      `).join('')}
+    </ol>
+  `;
+}
+
+let canalTopCompradores = null;
+
+function activarTopCompradoresRealtime() {
+  if (canalTopCompradores) return;
+
+  canalTopCompradores = supabase
+    .channel('top-compradores-realtime')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'inscripciones'
+      },
+      async () => {
+        const seccion = document.getElementById('top-compradores');
+
+        if (seccion && !seccion.classList.contains('oculto')) {
+          await cargarTopCompradores();
+        }
+      }
+    )
+    .subscribe();
+}
+async function subirImagenPremiosInicio() {
+  const input = document.getElementById('inputPremiosInicio');
+  const estado = document.getElementById('estadoPremiosInicio');
+  const archivo = input.files[0];
+
+  if (!archivo) return alert('Selecciona una imagen');
+
+  const ext = archivo.name.split('.').pop();
+  const nombreArchivo = `premios-inicio-${Date.now()}.${ext}`;
+
+  estado.textContent = 'Subiendo...';
+
+  const { error: uploadError } = await supabase.storage
+    .from('imagenes')
+    .upload(nombreArchivo, archivo, { upsert: true });
+
+  if (uploadError) {
+    estado.textContent = 'Error subiendo imagen';
+    console.error(uploadError);
+    return;
+  }
+
+  const url = `${supabaseUrl}/storage/v1/object/public/imagenes/${nombreArchivo}`;
+
+  const { error } = await supabase
+    .from('configuracion')
+    .upsert([{ clave: 'imagen_premios_inicio', valore: url }], { onConflict: 'clave' });
+
+  if (error) {
+    estado.textContent = 'Error guardando imagen';
+    console.error(error);
+    return;
+  }
+
+  estado.textContent = '✅ Imagen guardada';
+  await cargarImagenPremiosInicio();
+}
+
+async function cargarImagenPremiosInicio() {
+  const img = document.getElementById('imagenPremiosInicio');
+  if (!img) return;
+
+  const { data, error } = await supabase
+    .from('configuracion')
+    .select('valore')
+    .eq('clave', 'imagen_premios_inicio')
+    .single();
+
+  if (error || !data?.valore) {
+    img.classList.add('oculto');
+    return;
+  }
+
+  img.src = data.valore;
+  img.classList.remove('oculto');
+}
+
+window.subirImagenPremiosInicio = subirImagenPremiosInicio;
+
+async function eliminarImagenPremiosInicio() {
+  if (!confirm('¿Eliminar la imagen de premios?')) return;
+
+  try {
+    const { data } = await supabase
+      .from('configuracion')
+      .select('valore')
+      .eq('clave', 'imagen_premios_inicio')
+      .single();
+
+    if (data?.valore) {
+      const nombreArchivo = data.valore.split('/').pop();
+
+      await supabase.storage
+        .from('imagenes')
+        .remove([nombreArchivo]);
+    }
+
+    await supabase
+      .from('configuracion')
+      .update({ valore: null })
+      .eq('clave', 'imagen_premios_inicio');
+
+    const img = document.getElementById('imagenPremiosInicio');
+
+    if (img) {
+      img.src = '';
+      img.classList.add('oculto');
+    }
+
+    alert('Imagen eliminada correctamente');
+
+  } catch (err) {
+    console.error(err);
+    alert('Error eliminando imagen');
+  }
+}
+
+window.eliminarImagenPremiosInicio = eliminarImagenPremiosInicio;
+
+async function cargarBarraProgresoInicio() {
+  const contenedor = document.getElementById('barraProgresoInicio');
+  const texto = document.getElementById('textoProgresoCartones');
+  const relleno = document.getElementById('rellenoProgresoCartones');
+
+  if (!contenedor || !texto || !relleno) return;
+
+  const mostrar = await getConfigValue('mostrar_barra_progreso', 'false');
+
+  if (mostrar !== 'true') {
+    contenedor.classList.add('oculto');
+    return;
+  }
+
+  await obtenerTotalCartones();
+
+  const vendidos = await contarCartonesVendidos();
+  const disponibles = Math.max(totalCartones - vendidos, 0);
+  const porcentaje = totalCartones > 0
+    ? Math.round((disponibles / totalCartones) * 100)
+    : 0;
+
+  texto.textContent = `${porcentaje}% disponibles · ${disponibles} de ${totalCartones} cartones`;
+
+  relleno.style.width = `${porcentaje}%`;
+  contenedor.classList.remove('oculto');
+}
+
+async function guardarConfigBarraProgreso() {
+  const check = document.getElementById('toggleBarraProgreso');
+  if (!check) return;
+
+  const valor = check.checked ? 'true' : 'false';
+
+  const ok = await setConfigValue('mostrar_barra_progreso', valor);
+
+  if (ok) {
+    alert('Configuración guardada');
+    await cargarBarraProgresoInicio();
+  } else {
+    alert('Error guardando configuración');
+  }
+}
+
+async function cargarConfigBarraProgresoAdmin() {
+  const check = document.getElementById('toggleBarraProgreso');
+  if (!check) return;
+
+  const valor = await getConfigValue('mostrar_barra_progreso', 'false');
+  check.checked = valor === 'true';
+}
+let canalProgresoCartones = null;
+
+function activarProgresoCartonesRealtime() {
+  if (canalProgresoCartones) return;
+
+  canalProgresoCartones = supabase
+    .channel('progreso-cartones-inicio')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'cartones'
+      },
+      async () => {
+        await cargarBarraProgresoInicio();
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'configuracion'
+      },
+      async (payload) => {
+        if (
+          payload.new?.clave === 'mostrar_barra_progreso' ||
+          payload.new?.clave === 'total_cartones'
+        ) {
+          await cargarBarraProgresoInicio();
+        }
+      }
+    )
+    .subscribe();
+}
+// Función para seleccionar cartones aleatorios
+async function seleccionarAleatorioSeguro() {
+  const faltan = cantidadPermitida - usuario.cartones.length;
+
+  if (faltan <= 0) {
+    alert('Ya seleccionaste todos los cartones permitidos.');
+    return;
+  }
+
+  const { data, error } = await supabase.rpc('rpc_reservar_cartones_aleatorios', {
+    _cantidad: faltan,
+    _cedula: usuario.cedula,
+    _partida_id: null
+  });
+
+  if (error) {
+    console.error(error);
+    alert('Error eligiendo cartones aleatorios.');
+    return;
+  }
+
+  const resultado = Array.isArray(data) ? data[0] : data;
+
+  if (!resultado?.exito) {
+    alert(resultado?.mensaje || 'No se pudieron reservar cartones.');
+    await cargarCartones();
+    return;
+  }
+
+  usuario.cartones.push(...resultado.cartones);
+
+  await cargarCartones();
+
+  usuario.cartones.forEach(num => {
+    const carton = [...document.querySelectorAll('.carton')]
+      .find(c => parseInt(c.textContent) === num);
+
+    if (carton) {
+      carton.classList.remove('ocupado');
+      carton.classList.add('seleccionado');
+      carton.onclick = () => toggleCarton(num, carton);
+    }
+  });
+
+  actualizarContadorCartones(totalCartones, cartonesOcupados.length, usuario.cartones.length);
+  actualizarMonto();
+
+  alert(`Cartones seleccionados: ${resultado.cartones.join(', ')}`);
+}
+
+window.seleccionarAleatorioSeguro = seleccionarAleatorioSeguro;
+
+
+function guardarDatosClienteLocal() {
+  localStorage.setItem('cliente_nombre', usuario.nombre || '');
+  localStorage.setItem('cliente_telefono', usuario.telefono || '');
+  localStorage.setItem('cliente_cedula', usuario.cedula || '');
+  localStorage.setItem('cliente_referido', usuario.referido || '');
+}
+
+function cargarDatosClienteLocal() {
+  const nombre = localStorage.getItem('cliente_nombre') || '';
+  const telefono = localStorage.getItem('cliente_telefono') || '';
+  const cedula = localStorage.getItem('cliente_cedula') || '';
+  const referido = localStorage.getItem('cliente_referido') || '';
+
+  if (document.getElementById('nombre')) document.getElementById('nombre').value = nombre;
+  if (document.getElementById('telefono')) document.getElementById('telefono').value = telefono;
+  if (document.getElementById('cedula')) document.getElementById('cedula').value = cedula;
+  if (document.getElementById('referido')) document.getElementById('referido').value = referido;
+}
+// ─── NAVEGACIÓN POR PESTAÑAS DEL ADMIN ───
+function cambiarTab(tabId) {
+  // Ocultar todos los contenidos
+  document.querySelectorAll('.tab-content').forEach(tab => {
+    tab.classList.remove('active');
+  });
+  
+  // Desactivar todos los botones
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  
+  // Activar el seleccionado
+  document.getElementById(tabId).classList.add('active');
+  event.target.classList.add('active');
 }
 
 // ==================== EXPORTAR FUNCIONES ====================
