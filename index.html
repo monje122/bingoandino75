@@ -154,10 +154,10 @@
   <button type="button" onclick="mostrarVentana('bienvenida')">Inicio</button>
 </section>
 
-  <!-- Selección de cartones -->
+  <!-- Selección de artones -->
   <section id="cartones" class="oculto">
     <h2>Selecciona tus cartones</h2>
-    <!-- Botón en la ventana de cartones -->
+    <!-- Botón en la ventna de cartones -->
 <button onclick="seleccionarAleatorioSeguro()" class="btn">
   🎲 Elegir aleatoriamente
 </button>
@@ -174,15 +174,43 @@
 
   <!-- Ventana de pago -->
   <section id="pago" class="oculto">
-    <div id="contadorReserva" class="contador-reserva"></div>
-  <div class="pago-box">
-    <h2>Pago Móvil</h2>
-    <p>Banco: Mercantil(0105)</p>
-    <p>Teléfono:0414-3742385</p>
-    <p>Cédula: 19353708</p>
-    <p>Monto a pagar: <span id="monto-pago"></span> Bs</p>
+  <div id="contadorReserva" class="contador-reserva"></div>
+
+  <div class="pago-box pago-movil-premium">
+    <h2>💳 Pago Móvil</h2>
+
+    <div class="datos-admin-pago">
+      <h3>Datos para pagar</h3>
+
+      <p><strong>Banco:</strong> <span id="adminPagoBanco">Mercantil(0105)</span>
+        <button type="button" class="btn-copiar-mini" onclick="copiarDatoPago('adminPagoBanco')">📋</button>
+      </p>
+
+      <p><strong>Teléfono:</strong> <span id="adminPagoTelefono">0414-3742385</span>
+        <button type="button" class="btn-copiar-mini" onclick="copiarDatoPago('adminPagoTelefono')">📋</button>
+      </p>
+
+      <p><strong>Cédula:</strong> <span id="adminPagoCedula">19353708</span>
+        <button type="button" class="btn-copiar-mini" onclick="copiarDatoPago('adminPagoCedula')">📋</button>
+      </p>
+    </div>
+
+    <p class="monto-destacado">
+      Monto a pagar: <strong><span id="monto-pago"></span> Bs</strong>
+    </p>
+
+    <div class="registro-pago-ganador">
+      <h3>🏆 REGISTRA TU PAGO MÓVIL PARA EL PAGO GANADOR</h3>
+      <p>Estos datos quedan guardados automáticamente en este teléfono.</p>
+
+      <input type="text" id="pago_banco" placeholder="Tu banco">
+      <input type="tel" id="pago_telefono" placeholder="Tu número de Pago Móvil">
+      <input type="text" id="pago_cedula" placeholder="Tu cédula de Pago Móvil">
+    </div>
+
     <input type="file" accept="image/*" id="comprobante">
     <input type="text" id="referencia4dig" maxlength="4" placeholder="Últimos 4 dígitos de la referencia">
+
     <button id="btnEnviarComprobante" onclick="enviarComprobante()">Enviar comprobante</button>
     <button onclick="mostrarVentana('bienvenida')">Inicio</button>
   </div>
