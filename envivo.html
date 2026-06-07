@@ -2,28 +2,292 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Transmisión en Vivo</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
   <style>
-    body {
+    /* ═══════════════════════════════════════
+       VARIABLES GLOBALES
+       ═══════════════════════════════════════ */
+    :root {
+      --primary: #4361ee;
+      --primary-dark: #3a56d4;
+      --secondary: #FFA500;
+      --secondary-light: #F9E65C;
+      --success: #06d6a0;
+      --danger: #ef476f;
+      --warning: #ffd166;
+      --dark: #020A35;
+      --light: #f8f9fa;
+      --gray: #6c757d;
+      --white: #ffffff;
+      --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.2);
+      --border-radius: 12px;
+      --border-radius-sm: 8px;
+      --transition: all 0.3s ease;
+    }
+
+    /* Reset y estilos base */
+    * {
+      box-sizing: border-box;
       margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #020A35 0%, #1a237e 100%);
+      color: var(--white);
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       background-image: url('https://i.postimg.cc/Y0cNyFhG/fondo-fondo-andino.png');
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
+      opacity: 1;
+      z-index: -1;
+    }
+
+    /* ═══════════════════════════════════════
+       CONTENEDOR PRINCIPAL
+       ═══════════════════════════════════════ */
+    #video-container {
       display: flex;
-      justify-content: center;
+      flex-direction: column;
       align-items: center;
-      height: 100vh;
-    }
-
-    iframe {
       width: 90vw;
-      height: 50vw;
-      max-width: 1000px;
-      border: none;
-      z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 30px 20px;
+      animation: fadeIn 0.6s ease;
     }
 
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ═══════════════════════════════════════
+       HEADER / TÍTULO
+       ═══════════════════════════════════════ */
+    .live-header {
+      text-align: center;
+      margin-bottom: 25px;
+      width: 100%;
+    }
+
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #e74c3c, #c0392b);
+      color: white;
+      padding: 8px 20px;
+      border-radius: 50px;
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+      animation: pulse-live 2s infinite;
+      margin-bottom: 15px;
+    }
+
+    .live-badge::before {
+      content: '';
+      width: 10px;
+      height: 10px;
+      background: white;
+      border-radius: 50%;
+      animation: blink 1.5s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    @keyframes pulse-live {
+      0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); }
+      70% { box-shadow: 0 0 0 15px rgba(231, 76, 60, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+    }
+
+    .live-header h1 {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--white);
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      margin: 0;
+    }
+
+    .live-header p {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 16px;
+      margin-top: 8px;
+    }
+
+    /* ═══════════════════════════════════════
+       VIDEO PLAYER
+       ═══════════════════════════════════════ */
+    .video-wrapper {
+      width: 100%;
+      background: linear-gradient(145deg, #1a1a2e, #16213e);
+      border-radius: var(--border-radius);
+      padding: 15px;
+      box-shadow: var(--shadow-lg);
+      border: 2px solid rgba(255, 165, 0, 0.3);
+      margin-bottom: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .video-wrapper::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: linear-gradient(
+        45deg,
+        transparent 30%,
+        rgba(255, 165, 0, 0.03) 50%,
+        transparent 70%
+      );
+      animation: shine 6s infinite;
+      pointer-events: none;
+    }
+
+    @keyframes shine {
+      0% { transform: translateX(-100%) rotate(45deg); }
+      100% { transform: translateX(100%) rotate(45deg); }
+    }
+
+    #youtube-frame {
+      width: 100%;
+      height: 40vw;
+      max-height: 560px;
+      min-height: 300px;
+      border: none;
+      border-radius: var(--border-radius-sm);
+      background: #000;
+    }
+
+    /* ═══════════════════════════════════════
+       CHAT CONTAINER
+       ═══════════════════════════════════════ */
+    .chat-wrapper {
+      width: 100%;
+      background: linear-gradient(145deg, #1a1a2e, #16213e);
+      border-radius: var(--border-radius);
+      padding: 15px;
+      box-shadow: var(--shadow-lg);
+      border: 2px solid rgba(255, 165, 0, 0.2);
+      margin-bottom: 20px;
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .chat-header-icon {
+      font-size: 20px;
+    }
+
+    .chat-header h3 {
+      margin: 0;
+      font-size: 16px;
+      color: var(--secondary);
+      font-weight: 600;
+    }
+
+    #youtube-chat {
+      width: 100%;
+      height: 380px;
+      border: none;
+      border-radius: var(--border-radius-sm);
+      background: #fff;
+    }
+
+    /* ═══════════════════════════════════════
+       BOTÓN CHAT EXTERNO
+       ═══════════════════════════════════════ */
+    #chat-external {
+      display: none;
+      color: var(--dark);
+      margin: 12px 0 20px;
+      background: linear-gradient(135deg, var(--secondary), #ffb347);
+      padding: 14px 32px;
+      border-radius: 50px;
+      font-size: 16px;
+      text-decoration: none;
+      font-weight: 700;
+      box-shadow: var(--shadow-lg);
+      transition: var(--transition);
+      text-align: center;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      animation: pulse 2s infinite;
+    }
+
+    #chat-external:hover {
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 8px 25px rgba(255, 165, 0, 0.5);
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(255, 165, 0, 0.7); }
+      70% { box-shadow: 0 0 0 15px rgba(255, 165, 0, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 165, 0, 0); }
+    }
+
+    /* ═══════════════════════════════════════
+       REDES SOCIALES
+       ═══════════════════════════════════════ */
+    #redes-sociales {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      padding: 12px 25px;
+      background: linear-gradient(135deg, var(--secondary), #ffb347);
+      border-radius: 50px;
+      box-shadow: var(--shadow-lg);
+      margin-top: 10px;
+    }
+
+    #redes-sociales a {
+      color: var(--dark);
+      font-size: 24px;
+      transition: var(--transition);
+      text-decoration: none;
+    }
+
+    #redes-sociales a:hover {
+      transform: translateY(-5px) scale(1.2);
+    }
+
+    /* ═══════════════════════════════════════
+       COHETES / EFECTOS
+       ═══════════════════════════════════════ */
     #cohetesGif {
       display: none;
       position: fixed;
@@ -36,21 +300,265 @@
       z-index: 9999;
       pointer-events: none;
     }
+
+    /* ═══════════════════════════════════════
+       TOAST NOTIFICATIONS
+       ═══════════════════════════════════════ */
+    .toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: linear-gradient(135deg, #2c3e50, #34495e);
+      color: white;
+      padding: 14px 28px;
+      border-radius: 50px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+      z-index: 10000;
+      transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      opacity: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toast.mostrar {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    .toast.success {
+      background: linear-gradient(135deg, #27ae60, #229954);
+    }
+
+    .toast.error {
+      background: linear-gradient(135deg, #e74c3c, #c0392b);
+    }
+
+    /* ═══════════════════════════════════════
+       LOADING SPINNER
+       ═══════════════════════════════════════ */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(2, 10, 53, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9998;
+      backdrop-filter: blur(10px);
+    }
+
+    .spinner {
+      width: 60px;
+      height: 60px;
+      border: 4px solid rgba(255, 165, 0, 0.2);
+      border-top-color: var(--secondary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    .loading-text {
+      margin-top: 20px;
+      color: var(--white);
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ═══════════════════════════════════════
+       ERROR STATE
+       ═══════════════════════════════════════ */
+    .error-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .error-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+
+    .error-container h2 {
+      color: var(--white);
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+
+    .error-container p {
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 16px;
+      max-width: 400px;
+    }
+
+    /* ═══════════════════════════════════════
+       SCROLLBAR PERSONALIZADA
+       ═══════════════════════════════════════ */
+    ::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: linear-gradient(135deg, var(--secondary), #ffb347);
+      border-radius: 5px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(135deg, #ffb347, var(--secondary-light));
+    }
+
+    /* ═══════════════════════════════════════
+       MEDIA QUERY PARA MÓVILES
+       ═══════════════════════════════════════ */
+    @media (max-width: 768px) {
+      #video-container {
+        width: 100vw;
+        max-width: none;
+        padding: 15px 10px;
+      }
+
+      .live-header h1 {
+        font-size: 24px;
+      }
+
+      .video-wrapper,
+      .chat-wrapper {
+        padding: 10px;
+        border-radius: var(--border-radius-sm);
+      }
+
+      #youtube-frame {
+        height: 55vw;
+        max-height: 280px;
+        min-height: 200px;
+        border-radius: 8px;
+      }
+
+      #youtube-chat {
+        height: 320px;
+        min-height: 200px;
+        border-radius: 8px;
+      }
+
+      #chat-external {
+        display: inline-flex;
+        width: 90%;
+        justify-content: center;
+      }
+
+      #redes-sociales {
+        padding: 10px 20px;
+        gap: 15px;
+      }
+
+      #redes-sociales a {
+        font-size: 20px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .live-header h1 {
+        font-size: 20px;
+      }
+
+      .live-badge {
+        font-size: 12px;
+        padding: 6px 16px;
+      }
+
+      #youtube-frame {
+        height: 50vw;
+        min-height: 180px;
+      }
+    }
   </style>
+<base target="_blank">
 </head>
 <body>
 
-  <iframe id="youtube-frame" allowfullscreen allow="autoplay"></iframe>
+  <!-- Loading Overlay -->
+  <div id="loading" class="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">Cargando transmisión...</div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <div id="video-container">
+    <!-- Header -->
+    <div class="live-header">
+      <div class="live-badge">En Vivo</div>
+      <h1>Transmisión en Vivo</h1>
+      <p>¡Únete a la conversación en el chat!</p>
+    </div>
+
+    <!-- Video -->
+    <div class="video-wrapper">
+      <iframe id="youtube-frame" allowfullscreen allow="autoplay"></iframe>
+    </div>
+
+    <!-- Chat -->
+    <div class="chat-wrapper" id="chat-wrapper">
+      <div class="chat-header">
+        <span class="chat-header-icon">💬</span>
+        <h3>Chat en Vivo</h3>
+      </div>
+      <iframe id="youtube-chat"></iframe>
+    </div>
+
+    <!-- Botón externo para móvil -->
+    <a id="chat-external" target="_blank">💬 Abrir chat en YouTube</a>
+
+    <!-- Redes Sociales -->
+    <div id="redes-sociales">
+      
+  
+      
+    </div>
+  </div>
+
+  <!-- Efecto Cohetes -->
   <div id="cohetesGif"></div>
 
-  <!-- Sonido de cohetes -->
-  <audio id="sonidoCohetes" src="https://monje122.github.io/cohetes-sonido/pirotecnia.mp3" preload="auto"></audio>
+  <!-- Audio -->
+  <audio id="sonidoCohetes" src="https://monje122.github.io/cohetes-sonido/pirotecnia.mp33" preload="auto"></audio>
 
-  <!-- Librería Supabase -->
+  <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <script>
+    // Toast notification helper
+    function mostrarToast(mensaje, tipo = 'info') {
+      const toast = document.getElementById('toast');
+      toast.textContent = mensaje;
+      toast.className = `toast ${tipo} mostrar`;
+      setTimeout(() => {
+        toast.classList.remove('mostrar');
+      }, 3000);
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
+      const loading = document.getElementById('loading');
+
       const supabaseClient = supabase.createClient(
         'https://dbkixcpwirjwjvjintkr.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
@@ -66,25 +574,68 @@
       }
 
       async function cargarVideo() {
-        const { data, error } = await supabaseClient
-          .from('configuracion')
-          .select('valore')
-          .eq('clave', 'youtube_live')
-          .single();
+        try {
+          const { data, error } = await supabaseClient
+            .from('configuracion')
+            .select('valore')
+            .eq('clave', 'youtube_live')
+            .single();
 
-        if (error || !data) {
-          document.body.innerHTML = "<h2 style='color: white;'>Error al cargar el video</h2>";
-          return;
+          if (error || !data) {
+            throw new Error('No se pudo cargar la configuración del video');
+          }
+
+          const id = extraerIDYoutube(data.valore);
+          const dominio = location.hostname;
+
+          if (id) {
+            document.getElementById("youtube-frame").src = `https://www.youtube.com/embed/${id}?autoplay=1`;
+            document.getElementById("youtube-chat").src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${dominio}`;
+            document.getElementById("chat-external").href = `https://www.youtube.com/live_chat?v=${id}`;
+
+            // Ocultar loading con animación
+            loading.style.opacity = '0';
+            loading.style.transition = 'opacity 0.5s ease';
+            setTimeout(() => {
+              loading.style.display = 'none';
+            }, 500);
+
+            mostrarToast('¡Transmisión cargada con éxito!', 'success');
+          } else {
+            throw new Error('ID de YouTube inválido');
+          }
+        } catch (err) {
+          loading.innerHTML = `
+            <div class="error-container">
+              <div class="error-icon">⚠️</div>
+              <h2>Error al cargar</h2>
+              <p>${err.message}</p>
+            </div>
+          `;
+          mostrarToast(err.message, 'error');
         }
-
-        const id = extraerIDYoutube(data.valore);
-        document.getElementById("youtube-frame").src =
-          id ? `https://www.youtube.com/embed/${id}?autoplay=1` : "<h2 style='color: white;'>Enlace inválido</h2>";
       }
 
       await cargarVideo();
 
-      // 🔊 Reproducir cohetes con sonido en tiempo real
+      // Ajustar chat en móvil
+      function ajustarChatMobile() {
+        const chatWrapper = document.getElementById("chat-wrapper");
+        const chatExternal = document.getElementById("chat-external");
+
+        if (window.innerWidth < 768) {
+          chatWrapper.style.display = "none";
+          chatExternal.style.display = "inline-flex";
+        } else {
+          chatWrapper.style.display = "block";
+          chatExternal.style.display = "none";
+        }
+      }
+
+      ajustarChatMobile();
+      window.addEventListener('resize', ajustarChatMobile);
+
+      // Cohetes: efecto y sonido desde Supabase
       supabaseClient
         .channel('cohetes')
         .on('postgres_changes', {
@@ -99,6 +650,8 @@
             const sonido = document.getElementById('sonidoCohetes');
 
             gif.style.display = 'block';
+            mostrarToast('🎉 ¡Cohetes activados!', 'success');
+
             try {
               sonido.currentTime = 0;
               await sonido.play();
@@ -115,7 +668,7 @@
                 .from('configuracion')
                 .update({ valore: false })
                 .eq('clave', 'cohetes_activados');
-            }, 10000);
+            }, 12000);
           }
         })
         .subscribe();
