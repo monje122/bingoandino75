@@ -2414,3 +2414,80 @@ input:checked + .toggle-slider:before {
     font-size: 14px;
   }
 }
+.pago-movil-premium {
+  background: rgba(255,255,255,0.12);
+  backdrop-filter: blur(12px);
+  border: 2px solid var(--secondary);
+  border-radius: 20px;
+  padding: 25px;
+  box-shadow: var(--shadow-lg);
+}
+
+.datos-admin-pago,
+.registro-pago-ganador {
+  background: rgba(255,255,255,0.96);
+  color: var(--dark);
+  border-radius: 18px;
+  padding: 18px;
+  margin: 18px auto;
+  max-width: 430px;
+  border: 2px solid var(--secondary);
+  box-shadow: var(--shadow);
+}
+
+.datos-admin-pago h3,
+.registro-pago-ganador h3 {
+  text-align: center;
+  color: var(--dark);
+  margin-bottom: 12px;
+}
+
+.datos-admin-pago p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #f8f9fa;
+  padding: 10px;
+  border-radius: 10px;
+  color: var(--dark);
+}
+
+.btn-copiar-mini {
+  width: auto;
+  max-width: 45px;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.monto-destacado {
+  background: linear-gradient(135deg, var(--secondary), #ffb347);
+  color: var(--dark);
+  padding: 14px;
+  border-radius: 14px;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.toast-pago {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--success);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-weight: bold;
+  z-index: 9999;
+  box-shadow: var(--shadow-lg);
+}
+
+.pago-ganador-admin {
+  font-size: 13px;
+  line-height: 1.5;
+  min-width: 150px;
+}
