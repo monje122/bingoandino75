@@ -2153,7 +2153,15 @@ async function enviarComprobante() {
     if (!/^\d{4}$/.test(referencia4dig)) {
       throw new Error('Debes ingresar los últimos 4 dígitos de la referencia bancaria.');
     }
+const PagoBanco = document.getElementById('pago_banco').value.trim();
+const PagoTelefono = document.getElementById('pago_telefono').value.trim();
+const PagoCedula = document.getElementById('pago_cedula').value.trim();
 
+if (!PagoBanco || !PagoTelefono || !PagoCedula) {
+  throw new Error('Debes registrar tu Pago Móvil para el pago ganador.');
+}
+
+guardarDatosPagoClienteAutomatico();
     const archivo = document.getElementById('comprobante').files[0];
     if (!archivo) throw new Error('Debes subir un comprobante');
 
@@ -2179,6 +2187,9 @@ async function enviarComprobante() {
       comprobante: urlPublica,
       estado: 'pendiente',
       monto_bs: monto,
+      pago_banco: PagoBanco,
+      pago_telefono: PagoTelefono,
+      pago_cedula: PagoCedula,
       usa_promo: !!promo,
       promo_desc: promo ? promo.descripcion : null,
       precio_unitario_bs: promo ? null : (precioPorCarton || 0) 
@@ -2203,7 +2214,7 @@ clearInterval(timerReserva);
   }
 }
 
-// ==================== FUNCIONES DE USUARIO ====================
+// ==================== fUNCIONES DE USUARIO ====================
 async function consultarCartones() {
   const cedula = document.getElementById('consulta-cedula').value;
   const { data } = await supabase.from('inscripciones').select('*').eq('cedula', cedula);
@@ -2280,6 +2291,11 @@ async function cargarPanelAdmin() {
       <td><a href="${item.comprobante}" target="_blank">
             <img src="${item.comprobante}" alt="Comp.">
           </a></td>
+          <td class="pago-ganador-admin">
+  <strong>${item.pago_banco || 'Sin banco'}</strong><br>
+  📱 ${item.pago_telefono || 'Sin número'}<br>
+  🪪 ${item.pago_cedula || 'Sin cédula'}
+</td>
       <td>
         <span class="estado-circulo ${item.estado === 'aprobado' ? 'verde' : 'rojo'}"></span>
         <button class="btn-accion btn-aprobar" title="Aprobar">&#x2705;</button>
@@ -3897,7 +3913,54 @@ function cargarDatosClienteLocal() {
   if (document.getElementById('cedula')) document.getElementById('cedula').value = cedula;
   if (document.getElementById('referido')) document.getElementById('referido').value = referido;
 }
-// ─── NAVEGACIÓN POR PESTAÑAS DEL ADMIN ───
+
+function copiarDatoPago(id) {
+  const texto = document.getElementById(id).textContent.trim();
+
+  navigator.clipboard.writeText(texto)
+    .then(() => mostrarToastPago('✅ Copiado'))
+    .catch(() => alert('No se pudo copiar'));
+}
+
+function mostrarToastPago(mensaje) {
+  const toast = document.createElement('div');
+  toast.className = 'toast-pago';
+  toast.textContent = mensaje;
+  document.body.appendChild(toast);
+
+  setTimeout(() => toast.remove(), 1800);
+}
+
+function cargarDatosPagoCliente() {
+  const datos = JSON.parse(localStorage.getItem('pago_movil_cliente') || '{}');
+
+  const banco = document.getElementById('pago_banco');
+  const telefono = document.getElementById('pago_telefono');
+  const cedula = document.getElementById('pago_cedula');
+
+  if (!banco || !telefono || !cedula) return;
+
+  banco.value = datos.banco || '';
+  telefono.value = datos.telefono || '';
+  cedula.value = datos.cedula || '';
+
+  [banco, telefono, cedula].forEach(input => {
+    input.addEventListener('input', guardarDatosPagoClienteAutomatico);
+  });
+}
+
+function guardarDatosPagoClienteAutomatico() {
+  const datos = {
+    banco: document.getElementById('pago_banco').value.trim(),
+    telefono: document.getElementById('pago_telefono').value.trim(),
+    cedula: document.getElementById('pago_cedula').value.trim()
+  };
+
+  localStorage.setItem('pago_movil_cliente', JSON.stringify(datos));
+}
+
+document.addEventListener('DOMContentLoaded', cargarDatosPagoCliente);
+// ─── NAEGACIÓN POR PESTAÑAS DEL ADMIN ───
 function cambiarTab(tabId) {
   // Ocultar todos los contenidos
   document.querySelectorAll('.tab-content').forEach(tab => {
