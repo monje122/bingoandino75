@@ -1783,7 +1783,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     cargarBarraProgresoInicio(),
     cargarConfigBarraProgresoAdmin(),
     cargarImagenPremiosInicio(),
-    cargarPrecioPorCarton(),
     cargarConfiguracionModoCartones(),
     cargarPromocionesConfig()
   ]);
