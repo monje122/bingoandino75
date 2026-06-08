@@ -3597,7 +3597,7 @@ async function cargarTopCompradores() {
   const { data, error } = await supabase
     .from('inscripciones')
     .select('nombre, cedula, telefono, cartones, estado')
-    .in('estado', ['pendiente', 'aprobado']);
+    .in('estado', ['aprobado']);
 
   const cont = document.getElementById('listaTopCompradores');
   cont.innerHTML = '';
