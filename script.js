@@ -3913,7 +3913,10 @@ async function seleccionarAleatorioSeguro() {
 
     if (!yaSeleccionado && !yaOcupado) {
       c.classList.add('bloqueado');
-      c.onclick = null;
+
+    } else if (yaSeleccionado) {
+      // Si está seleccionado, asegurarse que el onclick siga llamando toggleCarton
+      c.onclick = () => toggleCarton(n, c);
     }
   });
 }
@@ -3925,6 +3928,7 @@ async function seleccionarAleatorioSeguro() {
 }
 
 window.seleccionarAleatorioSeguro = seleccionarAleatorioSeguro;
+
 
 
 function guardarDatosClienteLocal() {
