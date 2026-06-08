@@ -1012,7 +1012,7 @@ function generateDeviceId() {
 }
 
 
-// Función para obtener IP del cliente (simplificada)
+// Función pa obtener IP del cliente (simplificada)
 async function getClientIP() {
   try {
     const response = await fetch('https://api.ipify.org?format=json');
@@ -1766,30 +1766,31 @@ function renderizarBotonesPromociones() {
   promoBox.classList.toggle('oculto', !algunaActiva);
 }
 
-// ==================== FUNCIONES PRINCIPALES ====================
+// ==================== FUNCIES PRINCILES ====================
 window.addEventListener('DOMContentLoaded', async () => {
   console.log('🚀 Inicializando sistema...');
   
-  // Crear ta¿'bla de sese s n existe
+  // Crear ta¿'bl ses nxiste
    document.getElementById('modal-terminos').classList.remove('oculto');
-   cargarDatosClienteLocal();
-  obtenerTotalCartones();
-  cargarPrecioPorCarton();
-  activarProgresoCartonesRealtime();
-  generarCartones();
+   obtenerTotalCartones();
+  await cargarLinkWhatsapp();
   document.getElementById('overlay-carga').style.display = 'none';
 
   await Promise.all([
+    cargarDatosClienteLocal(),
+  activarProgresoCartonesRealtime(),
+  generarCartones(),
     cargarBarraProgresoInicio(),
     cargarConfigBarraProgresoAdmin(),
     cargarImagenPremiosInicio(),
+    cargarPrecioPorCarton(),
     cargarConfiguracionModoCartones(),
     cargarPromocionesConfig()
   ]);
 
   await verificarSesionInicial();
 
-  await cargarLinkWhatsapp();
+  
   
  
   // Event listeers específicos
