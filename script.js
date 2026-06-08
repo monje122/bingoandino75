@@ -1770,7 +1770,7 @@ function renderizarBotonesPromociones() {
 window.addEventListener('DOMContentLoaded', async () => {
   console.log('🚀 Inicializando sistema...');
   
-  // Crear tabla de sese s n existe
+  // Crear ta¿'bla de sese s n existe
    document.getElementById('modal-terminos').classList.remove('oculto');
    cargarDatosClienteLocal();
   obtenerTotalCartones();
@@ -1787,8 +1787,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     cargarConfiguracionModoCartones(),
     cargarPromocionesConfig()
   ]);
-
-  generarCartones();
 
   await verificarSesionInicial();
 
