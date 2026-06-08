@@ -3990,9 +3990,9 @@ Cédula: ${cedula}`;
 }
 
 function copiarTodoPagoMovil() {
-  const banco = document.getElementById('pago_banco')?.value || '';
-  const telefono = document.getElementById('pago_telefono')?.value || '';
-  const cedula = document.getElementById('pago_cedula')?.value || '';
+  const banco = document.getElementById('adminPagoBanco')?.textContent || '';
+  const telefono = document.getElementById('adminPagoTelefono')?.textContent || '';
+  const cedula = document.getElementById('adminPagoCedula')?.textContent || '';
   const monto = document.getElementById('monto-pago')?.textContent || '';
 
   const texto = `Banco: ${banco}
