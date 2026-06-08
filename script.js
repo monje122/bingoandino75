@@ -1090,7 +1090,7 @@ async function mostrarPanelAdminSeguro(sessionToken) {
   activarRefrescoAutomaticoAdmin();
 
   // Llevar la ventana al top
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  
 }
 // Función para verificar OTP
 
@@ -1770,23 +1770,29 @@ function renderizarBotonesPromociones() {
 window.addEventListener('DOMContentLoaded', async () => {
   console.log('🚀 Inicializando sistema...');
   
-  // Crear tabla de sesiones si no existe
+  // Crear tabla de sesone si no existe
    document.getElementById('modal-terminos').classList.remove('oculto');
-  await cargarBarraProgresoInicio();
-await cargarConfigBarraProgresoAdmin();
-  cargarDatosClienteLocal();
+cargarDatosClienteLocal();
   activarProgresoCartonesRealtime();
-  await cargarImagenPremiosInicio();
-  await obtenerTotalCartones();
-  await cargarPrecioPorCarton();
-  await cargarConfiguracionModoCartones();
+
+  await Promise.all([
+    cargarBarraProgresoInicio(),
+    cargarConfigBarraProgresoAdmin(),
+    cargarImagenPremiosInicio(),
+    obtenerTotalCartones(),
+    cargarPrecioPorCarton(),
+    cargarConfiguracionModoCartones(),
+    cargarPromocionesConfig()
+  ]);
+
   generarCartones();
-  await cargarPromocionesConfig();
-  
-  // Verificar sesión al cargar
+
   await verificarSesionInicial();
-  
-  // Event listeners específicos
+
+  await cargarLinkWhatsapp();
+  document.getElementById('overlay-carga').style.display = 'none';
+ 
+  // Event listeers específicos
   document.getElementById('guardarPromocionesBtn')?.addEventListener('click', guardarPromociones);
   document.getElementById('btnDupNombreAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorNombre);
   document.getElementById('btnDupReferenciaAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorReferencia);
@@ -1801,11 +1807,10 @@ await cargarConfigBarraProgresoAdmin();
   document.getElementById('guardarModoCartonesBtn')?.addEventListener('click', guardarModoCartones);
   document.getElementById('modoCartonesSelect')?.addEventListener('change', cambiarModoCartones);
   
-  // Cargar link de WhatsApp
-  await cargarLinkWhatsapp();
+  // Cargar likde WhatsApp
   
   // Mostrar términos
- 
+
   
   console.log('✅ Sistema inicializado correctamente');
 });
@@ -1948,10 +1953,7 @@ async function mostrarVentana(id) {
   document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
   const target = document.getElementById(id);
   if (target) target.classList.remove('oculto');
-  window.scrollTo({
-  top: 0,
-  behavior: 'smooth'
-});
+
 
   if (id === 'cantidad') {
     promocionSeleccionada = null;
@@ -2704,10 +2706,7 @@ function mostrarSeccion(id) {
   secciones.forEach(sec => sec.classList.add('oculto'));
   const target = document.getElementById(id);
   if (target) target.classList.remove('oculto');
-  window.scrollTo({
-  top: 0,
-  behavior: 'smooth'
-});
+  
     if (id === 'ganadores') {
     cargarGanadores();
   }
