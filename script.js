@@ -4015,10 +4015,10 @@ function copiarTodoPagoMovil() {
   const cedula = document.getElementById('adminPagoCedula')?.textContent || '';
   const monto = document.getElementById('monto-pago')?.textContent || '';
 
-  const texto = `Banco: ${banco}
-Teléfono: ${telefono}
-Cédula: ${cedula}
-Monto a pagar: ${monto} Bs`;
+  const texto = ` ${banco}
+ ${telefono}
+ ${cedula}
+ ${monto} `;
 
   navigator.clipboard.writeText(texto)
     .then(() => alert('✅ Todos los datos de pago copiados al portapapeles'))
