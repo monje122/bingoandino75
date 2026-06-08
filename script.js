@@ -1770,16 +1770,19 @@ function renderizarBotonesPromociones() {
 window.addEventListener('DOMContentLoaded', async () => {
   console.log('🚀 Inicializando sistema...');
   
-  // Crear tabla de sesone si no existe
+  // Crear tabla de sese s n existe
    document.getElementById('modal-terminos').classList.remove('oculto');
-cargarDatosClienteLocal();
+   cargarDatosClienteLocal();
+  obtenerTotalCartones();
+  cargarPrecioPorCarton();
   activarProgresoCartonesRealtime();
+  generarCartones();
+  document.getElementById('overlay-carga').style.display = 'none';
 
   await Promise.all([
     cargarBarraProgresoInicio(),
     cargarConfigBarraProgresoAdmin(),
     cargarImagenPremiosInicio(),
-    obtenerTotalCartones(),
     cargarPrecioPorCarton(),
     cargarConfiguracionModoCartones(),
     cargarPromocionesConfig()
@@ -1790,7 +1793,7 @@ cargarDatosClienteLocal();
   await verificarSesionInicial();
 
   await cargarLinkWhatsapp();
-  document.getElementById('overlay-carga').style.display = 'none';
+  
  
   // Event listeers específicos
   document.getElementById('guardarPromocionesBtn')?.addEventListener('click', guardarPromociones);
