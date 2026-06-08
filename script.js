@@ -1548,7 +1548,7 @@ function resaltarCeldasDuplicadas(duplicadosSet) {
   });
 }
 
-// Función para ver huérfanos
+// Función para r huérfanos
 async function verHuerfanos() {
   const btn = document.getElementById('btnVerHuerfanos');
   if (!btn) return;
@@ -1766,7 +1766,7 @@ function renderizarBotonesPromociones() {
   promoBox.classList.toggle('oculto', !algunaActiva);
 }
 
-// ==================== FUNCIES PRINCILES ====================
+// ==================== FUNC PINCILES ====================
 window.addEventListener('DOMContentLoaded', async () => {
   console.log('🚀 Inicializando sistema...');
   
@@ -1774,7 +1774,7 @@ window.addEventListener('DOMContentLoaded', async () => {
    document.getElementById('modal-terminos').classList.remove('oculto');
    obtenerTotalCartones();
   await cargarLinkWhatsapp();
-
+  document.getElementById('overlay-carga').style.display = 'none';
 
   await Promise.all([
     cargarDatosClienteLocal(),
@@ -1790,16 +1790,16 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   await verificarSesionInicial();
 
-  
+
   
  
-  // Event listeers específicos
+  // Event listes pefos
   document.getElementById('guardarPromocionesBtn')?.addEventListener('click', guardarPromociones);
   document.getElementById('btnDupNombreAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorNombre);
   document.getElementById('btnDupReferenciaAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorReferencia);
   document.getElementById('btnDuplicados')?.addEventListener('click', detectarCartonesDuplicados);
   document.getElementById('btnVerHuerfanos')?.addEventListener('click', verHuerfanos);
-  document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
+  document.getElementById('overlay-carga').style.display = 'none'; document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
   document.getElementById('guardarPrecioBtn')?.addEventListener('click', guardarPrecioPorCarton);
   document.getElementById('cerrarVentasBtn')?.addEventListener('click', cerrarVentas);
   document.getElementById('abrirVentasBtn')?.addEventListener('click', abrirVentas);
@@ -1809,9 +1809,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('modoCartonesSelect')?.addEventListener('change', cambiarModoCartones);
   
   // Cargar likde WhatsApp
-  
+   
   // Mostrar términos
-  document.getElementById('overlay-carga').style.display = 'none';
+
   
   console.log('✅ Sistema inicializado correctamente');
 });
@@ -1954,7 +1954,10 @@ async function mostrarVentana(id) {
   document.querySelectorAll('section').forEach(s => s.classList.add('oculto'));
   const target = document.getElementById(id);
   if (target) target.classList.remove('oculto');
-
+requestAnimationFrame(() => {
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+});
 
   if (id === 'cantidad') {
     promocionSeleccionada = null;
