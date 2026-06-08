@@ -193,12 +193,16 @@
       <p><strong>Cédula:</strong> <span id="adminPagoCedula">19353708</span>
         <button type="button" class="btn-copiar-mini" onclick="copiarDatoPago('adminPagoCedula')">📋</button>
       </p>
-    </div>
+    
 
     <p class="monto-destacado">
       Monto a pagar: <strong><span id="monto-pago"></span> Bs</strong>
     </p>
-
+<!-- Después de los datos del Pago Móvil y antes del monto -->
+<button type="button" id="btnCopiarTodoPago" class="btn-copiar-todo" onclick="copiarTodoPagoMovil()">
+  📋 Copiar todo
+</button>
+      </div>
     <div class="registro-pago-ganador">
       <h3>🏆 REGISTRA TU PAGO MÓVIL PARA EL PAGO GANADOR</h3>
       <p>Estos datos quedan guardados automáticamente en este teléfono.</p>
@@ -207,7 +211,7 @@
       <input type="tel" id="pago_telefono" placeholder="Tu número de Pago Móvil">
       <input type="text" id="pago_cedula" placeholder="Tu cédula de Pago Móvil">
     </div>
-    <h2>💳 Sube tu comprobante</h2>
+<h2>💳 Sube tu comprobante</h2>
     <input type="file" accept="image/*" id="comprobante">
     <input type="text" id="referencia4dig" maxlength="4" placeholder="Últimos 4 dígitos de la referencia">
 
