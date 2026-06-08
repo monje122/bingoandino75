@@ -3597,7 +3597,7 @@ async function cargarTopCompradores() {
   const { data, error } = await supabase
     .from('inscripciones')
     .select('nombre, cedula, telefono, cartones, estado')
-    .in('estado', ['aprobado']);
+    .in('estado', ['pendiente','aprobado']);
 
   const cont = document.getElementById('listaTopCompradores');
   cont.innerHTML = '';
@@ -3901,6 +3901,18 @@ async function seleccionarAleatorioSeguro() {
       carton.onclick = () => toggleCarton(num, carton);
     }
   });
+  if (usuario.cartones.length >= cantidadPermitida) {
+  document.querySelectorAll('.carton').forEach(c => {
+    const n = parseInt(c.textContent);
+    const yaSeleccionado = usuario.cartones.includes(n);
+    const yaOcupado = cartonesOcupados.includes(n);
+
+    if (!yaSeleccionado && !yaOcupado) {
+      c.classList.add('bloqueado');
+      c.onclick = null;
+    }
+  });
+}
 
   actualizarContadorCartones(totalCartones, cartonesOcupados.length, usuario.cartones.length);
   actualizarMonto();
@@ -3990,7 +4002,7 @@ Cédula: ${cedula}`;
 }
 
 function copiarTodoPagoMovil() {
-  const banco = document.getElementById('adminPagoBanco')?.textContent || '';
+    const banco = document.getElementById('adminPagoBanco')?.textContent || '';
   const telefono = document.getElementById('adminPagoTelefono')?.textContent || '';
   const cedula = document.getElementById('adminPagoCedula')?.textContent || '';
   const monto = document.getElementById('monto-pago')?.textContent || '';
