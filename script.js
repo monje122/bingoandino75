@@ -1807,12 +1807,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('verListaBtn')?.addEventListener('click', verListaAprobados);
   document.getElementById('guardarModoCartonesBtn')?.addEventListener('click', guardarModoCartones);
   document.getElementById('modoCartonesSelect')?.addEventListener('change', cambiarModoCartones);
-  document.getElementById('overlay-carga').style.display = 'none';
+  
   // Cargar likde WhatsApp
    
   // Mostrar términos
 
-  
+  document.getElementById('overlay-carga').style.display = 'none';
   console.log('✅ Sistema inicializado correctamente');
 });
 
