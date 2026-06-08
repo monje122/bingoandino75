@@ -1,6 +1,6 @@
 var supabase = window.supabase;
 // Configuración del admin
-
+let sistemaListo = false;
 // Variables globales
 let cartonesOcupados = [];
 let precioPorCarton = 0;
@@ -1769,7 +1769,7 @@ function renderizarBotonesPromociones() {
 // ==================== FUNC PINCILES ====================
 window.addEventListener('DOMContentLoaded', async () => {
   console.log('🚀 Inicializando sistema...');
-  
+    sistemaListo = false;
   // Crear ta¿'bl ses nxiste
    document.getElementById('modal-terminos').classList.remove('oculto');
    obtenerTotalCartones();
@@ -1809,7 +1809,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('modoCartonesSelect')?.addEventListener('change', cambiarModoCartones);
   
   // Cargar likde WhatsApp
-   
+    sistemaListo = true;
   // Mostrar términos
 
   document.getElementById('overlay-carga').style.display = 'none';
@@ -1914,6 +1914,7 @@ function isTrue(v) {
 }
 
 async function mostrarVentana(id) {
+  if (!sistemaListo) return;
   if (id === 'top-compradores') {
   await cargarTopCompradores();
      activarTopCompradoresRealtime()
