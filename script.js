@@ -2295,6 +2295,15 @@ async function cargarPanelAdmin() {
   <strong>${item.pago_banco || 'Sin banco'}</strong><br>
   📱 ${item.pago_telefono || 'Sin número'}<br>
   🪪 ${item.pago_cedula || 'Sin cédula'}
+   <button
+    class="btn-copiar-pago"
+    onclick="copiarPagoMovil(
+      '${item.pago_banco || ''}',
+      '${item.pago_telefono || ''}',
+      '${item.pago_cedula || ''}'
+    )">
+    📋 Copiar
+  </button>
 </td>
       <td>
         <span class="estado-circulo ${item.estado === 'aprobado' ? 'verde' : 'rojo'}"></span>
@@ -3232,9 +3241,12 @@ function renderDuplicadosAprobados(lista, tipoClave) {
 
   const tbl = document.createElement('table');
   tbl.className = 'dup-table';
+  tbl.style.width = '100%';
+  tbl.style.borderCollapse = 'collapse';
   tbl.innerHTML = `
     <thead>
-      <tr>
+      
+       <tr style="background-color:#FFA500; color:#000;">
         <th>${tipoClave === 'nombre' ? 'Nombre (normalizado)' : 'Referencia (4 dígitos)'}</th>
         <th>Veces</th>
         <th>Personas</th>
@@ -3246,6 +3258,10 @@ function renderDuplicadosAprobados(lista, tipoClave) {
 
   lista.forEach(g => {
     const tr = document.createElement('tr');
+    tr.style.backgroundColor = tipoClave === 'nombre' ? '#ffe0e0' : '#e0ffe0'; // fondo rojo claro para nombre, verde para referencia
+    tr.style.color = '#000'; // texto negro
+    tr.style.borderBottom = '1px solid #ddd';
+
     const personasTxt = g.items.map(x => {
       const carts = Array.isArray(x.cartones) ? x.cartones.join(', ') : '';
       return `${x.nombre} (CI: ${x.cedula})${x.telefono ? ' – ' + x.telefono : ''}${carts ? ' – Cartones: ' + carts : ''}`;
@@ -3960,6 +3976,34 @@ function guardarDatosPagoClienteAutomatico() {
 }
 
 document.addEventListener('DOMContentLoaded', cargarDatosPagoCliente);
+
+
+function copiarPagoMovil(banco, telefono, cedula) {
+  const texto =
+`Banco: ${banco}
+Teléfono: ${telefono}
+Cédula: ${cedula}`;
+
+  navigator.clipboard.writeText(texto)
+    .then(() => alert('✅ Datos copiados'))
+    .catch(() => alert('❌ Error al copiar'));
+}
+
+function copiarTodoPagoMovil() {
+  const banco = document.getElementById('pago_banco')?.value || '';
+  const telefono = document.getElementById('pago_telefono')?.value || '';
+  const cedula = document.getElementById('pago_cedula')?.value || '';
+  const monto = document.getElementById('monto-pago')?.textContent || '';
+
+  const texto = `Banco: ${banco}
+Teléfono: ${telefono}
+Cédula: ${cedula}
+Monto a pagar: ${monto} Bs`;
+
+  navigator.clipboard.writeText(texto)
+    .then(() => alert('✅ Todos los datos de pago copiados al portapapeles'))
+    .catch(() => alert('❌ Error al copiar'));
+}
 // ─── NAEGACIÓN POR PESTAÑAS DEL ADMIN ───
 function cambiarTab(tabId) {
   // Ocultar todos los contenidos
