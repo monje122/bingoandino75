@@ -1799,7 +1799,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btnDupReferenciaAprobados')?.addEventListener('click', detectarDuplicadosAprobadosPorReferencia);
   document.getElementById('btnDuplicados')?.addEventListener('click', detectarCartonesDuplicados);
   document.getElementById('btnVerHuerfanos')?.addEventListener('click', verHuerfanos);
-  document.getElementById('overlay-carga').style.display = 'none'; document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
+  document.getElementById('btnLiberarHuerfanos')?.addEventListener('click', liberarHuerfanos);
   document.getElementById('guardarPrecioBtn')?.addEventListener('click', guardarPrecioPorCarton);
   document.getElementById('cerrarVentasBtn')?.addEventListener('click', cerrarVentas);
   document.getElementById('abrirVentasBtn')?.addEventListener('click', abrirVentas);
@@ -1807,7 +1807,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('verListaBtn')?.addEventListener('click', verListaAprobados);
   document.getElementById('guardarModoCartonesBtn')?.addEventListener('click', guardarModoCartones);
   document.getElementById('modoCartonesSelect')?.addEventListener('change', cambiarModoCartones);
-  
+  document.getElementById('overlay-carga').style.display = 'none';
   // Cargar likde WhatsApp
    
   // Mostrar términos
