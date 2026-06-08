@@ -1774,7 +1774,7 @@ window.addEventListener('DOMContentLoaded', async () => {
    document.getElementById('modal-terminos').classList.remove('oculto');
    obtenerTotalCartones();
   await cargarLinkWhatsapp();
-  document.getElementById('overlay-carga').style.display = 'none';
+
 
   await Promise.all([
     cargarDatosClienteLocal(),
@@ -1811,7 +1811,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Cargar likde WhatsApp
   
   // Mostrar términos
-
+  document.getElementById('overlay-carga').style.display = 'none';
   
   console.log('✅ Sistema inicializado correctamente');
 });
