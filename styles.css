@@ -2491,3 +2491,39 @@ input:checked + .toggle-slider:before {
   line-height: 1.5;
   min-width: 150px;
 }
+.duplicado-card {
+  background: #ffffff;
+  color: #000;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.duplicado-header {
+  padding: 12px;
+  background: #FFA500;
+  color: #000;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.duplicado-detalle {
+  display: none;
+  padding: 10px;
+  background: #f9f9f9;
+}
+
+.persona-item {
+  padding: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.persona-item:last-child {
+  border-bottom: none;
+}
