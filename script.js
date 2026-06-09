@@ -2259,15 +2259,31 @@ async function elegirMasCartones() {
 
 // ==================== FUNCIONES DEL PANEL ADMIN ====================
 async function cargarPanelAdmin() {
-  await obtenerMontoTotalRecaudado();
-  await contarCartonesVendidos();
-  await cargarModoCartonesAdmin();
-  await cargarCartones();
-  await cargarPromocionesAdmin();
+ await Promise.all([
+  obtenerMontoTotalRecaudado(),
+  contarCartonesVendidos(),
+  cargarModoCartonesAdmin(),
+  cargarCartones(),
+  cargarPromocionesAdmin()
+]);
   
+ 
   const { data, error } = await supabase
     .from('inscripciones')
-    .select('*')
+    .select(`
+      id,
+      nombre,
+      telefono,
+      cedula,
+      referido,
+      cartones,
+      referencia4dig,
+      comprobante,
+      pago_banco,
+      pago_telefono,
+      pago_cedula,
+      estado
+    `)
     .order('id', { ascending: false });
 
   if (error) {
@@ -2290,13 +2306,13 @@ async function cargarPanelAdmin() {
       </td>
       <td>${item.cedula}</td>
       <td>${item.referido}</td>
-      <td>${item.cartones.join(', ')}</td>
+      <td>${Array.isArray(item.cartones) ? item.cartones.join(', ') : ''}</td>
       <td class="celda-ref" data-id="${item.id}">
         <span class="ref-text">${item.referencia4dig || ''}</span>
         <button class="btn-accion btn-edit-ref" title="Editar">&#9998;</button>
       </td>
       <td><a href="${item.comprobante}" target="_blank">
-            <img src="${item.comprobante}" alt="Comp.">
+            <img src="${item.comprobante}" alt="Comp." loading="lazy">
           </a></td>
           <td class="pago-ganador-admin">
   <strong>${item.pago_banco || 'Sin banco'}</strong><br>
@@ -3236,51 +3252,59 @@ async function fetchAprobadosBasico() {
 function renderDuplicadosAprobados(lista, tipoClave) {
   const cont = document.getElementById('duplicadosAprobadosResultado');
   if (!cont) return;
+
   cont.innerHTML = '';
 
   if (!lista.length) {
-    cont.innerHTML = `<p style="color:#4caf50;font-weight:600;">No se encontraron duplicados por ${tipoClave} entre los aprobados.</p>`;
+    cont.innerHTML = `<p style="color:#4caf50;font-weight:600;">
+      No se encontraron duplicados por ${tipoClave} entre los aprobados.
+    </p>`;
     return;
   }
 
-  const tbl = document.createElement('table');
-  tbl.className = 'dup-table';
-  tbl.style.width = '100%';
-  tbl.style.borderCollapse = 'collapse';
-  tbl.innerHTML = `
-    <thead>
-      
-       <tr style="background-color:#FFA500; color:#000;">
-        <th>${tipoClave === 'nombre' ? 'Nombre (normalizado)' : 'Referencia (4 dígitos)'}</th>
-        <th>Veces</th>
-        <th>Personas</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = tbl.querySelector('tbody');
+  lista.forEach((g, index) => {
+    const card = document.createElement('div');
+    card.className = 'duplicado-card';
 
-  lista.forEach(g => {
-    const tr = document.createElement('tr');
-    tr.style.backgroundColor = tipoClave === 'nombre' ? '#ffe0e0' : '#e0ffe0'; // fondo rojo claro para nombre, verde para referencia
-    tr.style.color = '#000'; // texto negro
-    tr.style.borderBottom = '1px solid #ddd';
+    const titulo = tipoClave === 'nombre'
+      ? `👤 Nombre: ${g.clave}`
+      : `#️⃣ Referencia: ${g.clave}`;
 
-    const personasTxt = g.items.map(x => {
-      const carts = Array.isArray(x.cartones) ? x.cartones.join(', ') : '';
-      return `${x.nombre} (CI: ${x.cedula})${x.telefono ? ' – ' + x.telefono : ''}${carts ? ' – Cartones: ' + carts : ''}`;
-    }).join(' | ');
-    tr.innerHTML = `
-      <td>${g.clave}</td>
-      <td>${g.items.length}</td>
-      <td>${personasTxt}</td>
+    const detalleId = `dup-detalle-${tipoClave}-${index}`;
+
+    card.innerHTML = `
+      <div class="duplicado-header" onclick="toggleDuplicado('${detalleId}')">
+        <span>${titulo}</span>
+        <span>${g.items.length} veces ▼</span>
+      </div>
+
+      <div id="${detalleId}" class="duplicado-detalle">
+        ${g.items.map(x => {
+          const carts = Array.isArray(x.cartones) ? x.cartones.join(', ') : '';
+
+          return `
+            <div class="persona-item">
+              <strong>${x.nombre || 'Sin nombre'}</strong><br>
+              CI: ${x.cedula || 'N/A'}
+              ${x.telefono ? `<br>Tel: ${x.telefono}` : ''}
+              ${carts ? `<br>Cartones: ${carts}` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
     `;
-    tbody.appendChild(tr);
-  });
 
-  cont.appendChild(tbl);
+    cont.appendChild(card);
+  });
 }
 
+function toggleDuplicado(id) {
+  const detalle = document.getElementById(id);
+  if (!detalle) return;
+
+  detalle.style.display =
+    detalle.style.display === 'block' ? 'none' : 'block';
+}
 async function detectarDuplicadosAprobadosPorNombre() {
   const rows = await fetchAprobadosBasico();
   const mapa = new Map();
@@ -4036,7 +4060,7 @@ function cambiarTab(tabId) {
     btn.classList.remove('active');
   });
   
-  // Activar el seleccionado
+  // Activar el seccionado
   document.getElementById(tabId).classList.add('active');
   event.target.classList.add('active');
 }
