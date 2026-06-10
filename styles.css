@@ -2543,7 +2543,7 @@ input:checked + .toggle-slider:before {
 
 #contenedor-aprobados th:nth-child(1),
 #contenedor-aprobados td:nth-child(1) {
-  width: 25%;
+  width: 29%;
 }
 
 #contenedor-aprobados th:nth-child(2),
@@ -2553,5 +2553,5 @@ input:checked + .toggle-slider:before {
 
 #contenedor-aprobados th:nth-child(3),
 #contenedor-aprobados td:nth-child(3) {
-  width: 35%;
+  width: 31%;
 }
