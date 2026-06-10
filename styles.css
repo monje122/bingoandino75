@@ -2527,3 +2527,31 @@ input:checked + .toggle-slider:before {
 .persona-item:last-child {
   border-bottom: none;
 }
+#contenedor-aprobados table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+}
+
+#contenedor-aprobados th,
+#contenedor-aprobados td {
+  text-align: center !important;
+  vertical-align: middle !important;
+  word-break: break-word !important;
+}
+
+#contenedor-aprobados th:nth-child(1),
+#contenedor-aprobados td:nth-child(1) {
+  width: 20%;
+}
+
+#contenedor-aprobados th:nth-child(2),
+#contenedor-aprobados td:nth-child(2) {
+  width: 45%;
+}
+
+#contenedor-aprobados th:nth-child(3),
+#contenedor-aprobados td:nth-child(3) {
+  width: 35%;
+}
