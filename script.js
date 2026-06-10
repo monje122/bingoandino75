@@ -2323,11 +2323,39 @@ clearInterval(timerReserva);
 
 // ==================== fUNCIONES DE USUARIO ====================
 async function consultarCartones() {
-  const cedula = document.getElementById('consulta-cedula').value;
-  const { data } = await supabase.from('inscripciones').select('*').eq('cedula', cedula);
+  const cedula = document.getElementById('consulta-cedula').value.trim();
+
   const cont = document.getElementById('cartones-usuario');
   cont.innerHTML = '';
-  data.forEach(item => {
+
+  // Buscar cualquier inscripción
+  const { data: todas } = await supabase
+    .from('inscripciones')
+    .select('*')
+    .eq('cedula', cedula);
+
+  if (!todas || todas.length === 0) {
+    cont.innerHTML = `
+      <p style="text-align:center;color:#ff4444;">
+        No se encontró ninguna compra registrada con esta cédula.
+      </p>
+    `;
+    return;
+  }
+
+  // Buscar aprobadas
+  const aprobadas = todas.filter(i => i.estado === 'aprobado');
+
+  if (aprobadas.length === 0) {
+    cont.innerHTML = `
+      <p style="text-align:center;color:#ff9800;">
+        Tu compra fue recibida y está pendiente de aprobación.
+      </p>
+    `;
+    return;
+  }
+
+  aprobadas.forEach(item => {
     item.cartones.forEach(num => {
       const img = document.createElement('img');
       img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BINGOANDINO75_CARTON_${String(num).padStart(5, '0')}.jpg`;
