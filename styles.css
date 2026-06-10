@@ -2543,23 +2543,15 @@ input:checked + .toggle-slider:before {
 
 #contenedor-aprobados th:nth-child(1),
 #contenedor-aprobados td:nth-child(1) {
-  width: 30%;
+  width: 31%;
 }
 
 #contenedor-aprobados th:nth-child(2),
 #contenedor-aprobados td:nth-child(2) {
-  width: 37%;
+  width: 35%;
 }
 
 #contenedor-aprobados th:nth-child(3),
 #contenedor-aprobados td:nth-child(3) {
-  width: 33%;
-}
-#contenedor-aprobados,
-#contenedor-aprobados * {
-  user-select: text !important;
-  -webkit-user-select: text !important;
-}
-#contenedor-aprobados {
-  overflow: visible !important;
+  width: 34%;
 }
