@@ -2075,14 +2075,15 @@ async function toggleCarton(num, elem) {
   usuario.cartones.splice(index, 1);
   elem.classList.remove('seleccionado');
 
-  const { error: errorLiberar } = await supabase.rpc('rpc_liberar_reserva', {
-    _numero: num,
-    _cedula: usuario.cedula,
-    _partida_id: null
-  });
- if (errorLiberar) {
-    console.error('Error liberando reserva:', errorLiberar);
-  }
+ const { data: liberado, error: errorLiberar } = await supabase.rpc('rpc_liberar_reserva', {
+  _numero: Number(num),
+  _cedula: String(usuario.cedula || '').trim(),
+  _partida_id: null
+});
+
+console.log('Liberando cartón:', num, { liberado, errorLiberar });
+
+cartonesOcupados = cartonesOcupados.filter(n => Number(n) !== Number(num));
     
     document.querySelectorAll('.carton.bloqueado').forEach(c => {
     const n = parseInt(c.textContent);
