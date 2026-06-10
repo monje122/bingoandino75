@@ -4112,7 +4112,14 @@ function activarProgresoCartonesRealtime() {
     .subscribe();
 }
 // Función para seleccionar cartones aleatorios
+let seleccionAleatoriaEnProceso = false;
 async function seleccionarAleatorioSeguro() {
+if (seleccionAleatoriaEnProceso) return;
+
+  seleccionAleatoriaEnProceso = true;
+
+  try {
+
   const faltan = cantidadPermitida - usuario.cartones.length;
 
   if (faltan <= 0) {
@@ -4174,6 +4181,10 @@ async function seleccionarAleatorioSeguro() {
   actualizarMonto();
 
   alert(`Cartones seleccionados: ${resultado.cartones.join(', ')}`);
+
+ } finally {
+    seleccionAleatoriaEnProceso = false;
+  }
 }
 
 window.seleccionarAleatorioSeguro = seleccionarAleatorioSeguro;
