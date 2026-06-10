@@ -2068,6 +2068,8 @@ async function cargarCartones() {
 }
 
 async function toggleCarton(num, elem) {
+  const cedulaLimpia = String(usuario.cedula || '').trim();
+  const numero = Number(num);
   const index = usuario.cartones.indexOf(num);
 
   // Deseleccionar
@@ -2077,7 +2079,7 @@ async function toggleCarton(num, elem) {
 
  const { data: liberado, error: errorLiberar } = await supabase.rpc('rpc_liberar_reserva', {
   _numero: Number(num),
-  _cedula: String(usuario.cedula || '').trim(),
+  _cedula: cedulaLimpia,
   _partida_id: null
 });
 
@@ -2103,7 +2105,7 @@ cartonesOcupados = cartonesOcupados.filter(n => Number(n) !== Number(num));
   // Reservar en Supabase de forma segura
   const { data, error } = await supabase.rpc('rpc_reservar_carton', {
     _numero: num,
-    _cedula: usuario.cedula,
+    _cedula: cedulaLimpia,
     _partida_id: null
   });
 
