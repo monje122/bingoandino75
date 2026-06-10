@@ -2328,7 +2328,6 @@ async function consultarCartones() {
   const cont = document.getElementById('cartones-usuario');
   cont.innerHTML = '';
 
-  // Buscar cualquier inscripción
   const { data: todas } = await supabase
     .from('inscripciones')
     .select('*')
@@ -2343,20 +2342,26 @@ async function consultarCartones() {
     return;
   }
 
-  // Buscar aprobadas
-  const aprobadas = todas.filter(i => i.estado === 'aprobado');
+  const tieneAprobada = todas.some(i => i.estado === 'aprobado');
 
-  if (aprobadas.length === 0) {
-    cont.innerHTML = `
-      <p style="text-align:center;color:#ff9800;">
-        Tu compra fue recibida y está pendiente de aprobación.
-      </p>
-    `;
-    return;
+  const mensaje = document.createElement('div');
+  mensaje.style.textAlign = 'center';
+  mensaje.style.marginBottom = '15px';
+  mensaje.style.fontWeight = 'bold';
+
+  if (tieneAprobada) {
+    mensaje.style.color = 'green';
+    mensaje.innerHTML = '✅ Tu compra ha sido aprobada.';
+  } else {
+    mensaje.style.color = '#ff9800';
+    mensaje.innerHTML = '⏳ Tu compra fue recibida y está pendiente de aprobación.';
   }
 
-  aprobadas.forEach(item => {
-    item.cartones.forEach(num => {
+  cont.appendChild(mensaje);
+
+  // Mostrar cartones aunque esté pendiente
+  todas.forEach(item => {
+    (item.cartones || []).forEach(num => {
       const img = document.createElement('img');
       img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BINGOANDINO75_CARTON_${String(num).padStart(5, '0')}.jpg`;
       img.classList.add('carton-consulta-img');
