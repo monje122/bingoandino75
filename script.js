@@ -2078,11 +2078,30 @@ async function toggleCarton(num, elem) {
     usuario.cartones.splice(index, 1);
     elem.classList.remove('seleccionado');
 
-    const { data: liberado, error: errorLiberar } = await supabase.rpc('rpc_liberar_reserva', {
-      _numero: num,
-      _cedula: cedulaLimpia,
-      _partida_id: null
-    });
+  const { data: filaAntes } = await supabase
+  .from('cartones')
+  .select('numero, cedula, partida_id')
+  .eq('numero', num)
+  .maybeSingle();
+
+const { data: liberado, error: errorLiberar } = await supabase.rpc('rpc_liberar_reserva', {
+  _numero: num,
+  _cedula: cedulaLimpia,
+  _partida_id: null
+});
+
+const { data: filaDespues } = await supabase
+  .from('cartones')
+  .select('numero, cedula, partida_id')
+  .eq('numero', num)
+  .maybeSingle();
+
+alert(
+  'ANTES: ' + JSON.stringify(filaAntes) +
+  '\nMANDÉ: ' + JSON.stringify({ numero: num, cedula: cedulaLimpia, partida_id: null }) +
+  '\nRPC: ' + JSON.stringify({ liberado, errorLiberar }) +
+  '\nDESPUÉS: ' + JSON.stringify(filaDespues)
+);
 
     console.log('Liberar cartón:', {
       numero: num,
