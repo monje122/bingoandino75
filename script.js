@@ -1355,7 +1355,7 @@ async function verListaAprobados() {
     console.error('Elemento listaAprobados no encontrado');
     return;
   }
-  
+
   listaDiv.innerHTML = '';
 
   if (error) {
@@ -1372,14 +1372,14 @@ async function verListaAprobados() {
   const tabla = document.createElement('table');
   tabla.style.width = '100%';
   tabla.style.borderCollapse = 'collapse';
+
   tabla.innerHTML = `
     <thead>
       <tr>
         <th style="border: 1px solid #ccc; padding: 8px;">Nombre</th>
         <th style="border: 1px solid #ccc; padding: 8px;">Cédula</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Referido</th>
-        <th style="border: 1px solid #ccc; padding: 8px;">Teléfono</th>
         <th style="border: 1px solid #ccc; padding: 8px;">Cartones</th>
+        <th style="border: 1px solid #ccc; padding: 8px;">Pago Móvil</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -1389,18 +1389,20 @@ async function verListaAprobados() {
 
   data.forEach(item => {
     const tr = document.createElement('tr');
+
     tr.innerHTML = `
       <td style="border: 1px solid #ccc; padding: 8px;">${item.nombre || ''}</td>
       <td style="border: 1px solid #ccc; padding: 8px;">${item.cedula || ''}</td>
-      <td style="border: 1px solid #ccc; padding: 8px;">${item.referido || ''}</td>
       <td style="border: 1px solid #ccc; padding: 8px;">
-        <a href="${buildWhatsAppLink(item.telefono, `Hola ${item.nombre}, tu inscripción fue aprobada.`)}"
-           target="_blank" rel="noopener">
-          ${item.telefono || ''}
-        </a>
+        ${Array.isArray(item.cartones) ? item.cartones.join(', ') : ''}
       </td>
-      <td style="border: 1px solid #ccc; padding: 8px;">${Array.isArray(item.cartones) ? item.cartones.join(', ') : ''}</td>
+      <td style="border: 1px solid #ccc; padding: 8px;">
+  ${item.pago_banco || ''}<br>
+  ${item.pago_telefono || ''}<br>
+  ${item.pago_cedula || ''}
+</td>
     `;
+
     tbody.appendChild(tr);
   });
 
@@ -2066,29 +2068,49 @@ async function cargarCartones() {
 }
 
 async function toggleCarton(num, elem) {
-  const index = usuario.cartones.indexOf(num);
+  num = Number(num);
+  const cedulaLimpia = String(usuario.cedula || '').trim();
+
+  const index = usuario.cartones.map(Number).indexOf(num);
 
   // Deseleccionar
   if (index >= 0) {
-  usuario.cartones.splice(index, 1);
-  elem.classList.remove('seleccionado');
+    usuario.cartones.splice(index, 1);
+    elem.classList.remove('seleccionado');
 
-  const { error: errorLiberar } = await supabase.rpc('rpc_liberar_reserva', {
-    _numero: num,
-    _cedula: usuario.cedula,
-    _partida_id: null
-  });
- if (errorLiberar) {
-    console.error('Error liberando reserva:', errorLiberar);
-  }
-    
-    document.querySelectorAll('.carton.bloqueado').forEach(c => {
-    const n = parseInt(c.textContent);
-    if (!cartonesOcupados.includes(n) && !usuario.cartones.includes(n)) {
-      c.classList.remove('bloqueado');
-      c.onclick = () => abrirModalCarton(n, c);
+    const { data: liberado, error: errorLiberar } = await supabase.rpc('rpc_liberar_reserva', {
+      _numero: num,
+      _cedula: cedulaLimpia,
+      _partida_id: null
+    });
+
+    console.log('Liberar cartón:', {
+      numero: num,
+      cedula: cedulaLimpia,
+      liberado,
+      errorLiberar
+    });
+
+    if (errorLiberar) {
+      console.error('Error liberando reserva:', errorLiberar);
+      alert('No se pudo liberar el cartón. Intenta otra vez.');
+      return;
     }
-  });
+
+    if (liberado !== true) {
+      console.warn('El cartón no se liberó. Puede que no coincidía la cédula o ya estaba en inscripción.');
+    }
+
+    cartonesOcupados = cartonesOcupados.filter(n => Number(n) !== num);
+
+    document.querySelectorAll('.carton.bloqueado').forEach(c => {
+      const n = Number(c.textContent);
+      if (!cartonesOcupados.map(Number).includes(n) && !usuario.cartones.map(Number).includes(n)) {
+        c.classList.remove('bloqueado');
+        c.onclick = () => abrirModalCarton(n, c);
+      }
+    });
+
     actualizarContadorCartones(totalCartones, cartonesOcupados.length, usuario.cartones.length);
     actualizarMonto();
     return;
@@ -2097,10 +2119,9 @@ async function toggleCarton(num, elem) {
   // No permitir más de la cantidad elegida
   if (usuario.cartones.length >= cantidadPermitida) return;
 
-  // Reservar en Supabase de forma segura
   const { data, error } = await supabase.rpc('rpc_reservar_carton', {
     _numero: num,
-    _cedula: usuario.cedula,
+    _cedula: cedulaLimpia,
     _partida_id: null
   });
 
@@ -2115,9 +2136,9 @@ async function toggleCarton(num, elem) {
 
   if (usuario.cartones.length === cantidadPermitida) {
     document.querySelectorAll('.carton').forEach(c => {
-      const n = parseInt(c.textContent);
-      const yaSeleccionado = usuario.cartones.includes(n);
-      const yaOcupado = cartonesOcupados.includes(n);
+      const n = Number(c.textContent);
+      const yaSeleccionado = usuario.cartones.map(Number).includes(n);
+      const yaOcupado = cartonesOcupados.map(Number).includes(n);
 
       if (!yaSeleccionado && !yaOcupado) {
         c.classList.add('bloqueado');
@@ -2183,13 +2204,91 @@ guardarDatosPagoClienteAutomatico();
 
     const promo = getPromocionSeleccionada();
     const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
-    
+    const cartonesEnviar = (usuario.cartones || []).map(n => Number(n));
+
+if (cartonesEnviar.length === 0) {
+  throw new Error('Debes seleccionar al menos un cartón.');
+}
+
+if (cartonesEnviar.length !== cantidadPermitida) {
+  throw new Error('La cantidad de cartones seleccionados no coincide con la cantidad elegida.');
+}
+
+// 1. Validar que esos cartones estén reservados por esta misma cédula
+const { data: reservas, error: errorReservas } = await supabase
+  .from('cartones')
+  .select('numero, cedula')
+  .in('numero', cartonesEnviar);
+
+if (errorReservas) {
+  throw new Error('No se pudieron validar tus cartones.');
+}
+
+const cedulaLimpia = String(usuario.cedula || '').trim();
+
+const reservasValidas = (reservas || [])
+  .filter(r => String(r.cedula || '').trim() === cedulaLimpia)
+  .map(r => Number(r.numero));
+
+const faltantes = cartonesEnviar.filter(n => !reservasValidas.includes(n));
+
+if (faltantes.length > 0) {
+  await supabase.rpc('rpc_liberar_reserva', {
+    _cedula: cedulaLimpia,
+    _partida_id: null
+  });
+
+  alert('⚠️ Estos cartones ya no están reservados para ti: ' + faltantes.join(', ') + '\n\nElige otros cartones.');
+  await cargarCartones();
+  mostrarVentana('cartones');
+  return;
+}
+
+// 2. Validar que no existan en otra inscripción pendiente/aprobada
+const { data: inscripcionesActivas, error: errorInscripciones } = await supabase
+  .from('inscripciones')
+  .select('id, nombre, cedula, cartones')
+  .in('estado', ['pendiente', 'aprobado']);
+
+if (errorInscripciones) {
+  throw new Error('No se pudieron verificar cartones duplicados.');
+}
+
+const duplicados = [];
+
+(inscripcionesActivas || []).forEach(ins => {
+  const otrosCartones = (ins.cartones || []).map(n => Number(n));
+
+  cartonesEnviar.forEach(n => {
+    if (otrosCartones.includes(n)) {
+      duplicados.push({
+        carton: n,
+        nombre: ins.nombre,
+        cedula: ins.cedula
+      });
+    }
+  });
+});
+
+if (duplicados.length > 0) {
+  const numeros = [...new Set(duplicados.map(d => d.carton))];
+
+  await supabase.rpc('rpc_liberar_reserva', {
+    _cedula: cedulaLimpia,
+    _partida_id: null
+  });
+
+  alert('⚠️ Estos cartones ya fueron tomados: ' + numeros.join(', ') + '\n\nElige otros cartones.');
+  await cargarCartones();
+  mostrarVentana('cartones');
+  return;
+}
     const { error: errorInsert } = await supabase.from('inscripciones').insert([{
       nombre: usuario.nombre,
       telefono: usuario.telefono,
-      cedula: usuario.cedula,
+      cedula: cedulaLimpia,
       referido: usuario.referido,
-      cartones: usuario.cartones,
+      cartones: cartonesEnviar.map(String),
       referencia4dig: referencia4dig,
       comprobante: urlPublica,
       estado: 'pendiente',
@@ -2204,7 +2303,7 @@ guardarDatosPagoClienteAutomatico();
 
     if (errorInsert) {
       await supabase.rpc('rpc_liberar_reserva', {
-  _cedula: usuario.cedula,
+  _cedula: cedulaLimpia,
   _partida_id: null
 });
       throw new Error('Error guardando la inscripción');
@@ -2257,7 +2356,7 @@ async function elegirMasCartones() {
   actualizarPreseleccion();
 }
 
-// ==================== FUNCIONES DEL PANEL ADMIN ====================
+// ==================== FUNCIOS DEL PANEL ADMIN ====================
 async function cargarPanelAdmin() {
  await Promise.all([
   obtenerMontoTotalRecaudado(),
@@ -2368,6 +2467,63 @@ document.getElementById('btn-recargar-panel').addEventListener('click', () => {
 });
 
 async function aprobarInscripcion(id, fila) {
+
+  // Buscar inscripción actual
+  const { data: actual, error: errorActual } = await supabase
+    .from('inscripciones')
+    .select('cartones,nombre')
+    .eq('id', id)
+    .single();
+
+  if (errorActual || !actual) {
+    alert('No se pudo verificar la inscripción');
+    return;
+  }
+
+  const misCartones = (actual.cartones || []).map(String);
+
+  // Buscar aprobados
+  const { data: aprobados, error: errorAprobados } = await supabase
+    .from('inscripciones')
+    .select('id,nombre,cartones')
+    .eq('estado', 'aprobado')
+    .neq('id', id);
+
+  if (errorAprobados) {
+    alert('No se pudieron verificar duplicados');
+    return;
+  }
+
+  const duplicados = [];
+
+  (aprobados || []).forEach(ins => {
+    const otros = (ins.cartones || []).map(String);
+
+    misCartones.forEach(c => {
+      if (otros.includes(c)) {
+        duplicados.push({
+          carton: c,
+          nombre: ins.nombre
+        });
+      }
+    });
+  });
+
+  if (duplicados.length > 0) {
+
+    const mensaje = duplicados
+      .map(d => `Cartón ${d.carton} ya aprobado para ${d.nombre}`)
+      .join('\n');
+
+    alert(
+      '⚠️ No se puede aprobar.\n\n' +
+      mensaje
+    );
+
+    return;
+  }
+
+  // Aprobar
   const { error } = await supabase
     .from('inscripciones')
     .update({ estado: 'aprobado' })
@@ -2378,12 +2534,15 @@ async function aprobarInscripcion(id, fila) {
     return alert('No se pudo aprobar');
   }
 
-  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
+  fila.querySelectorAll('button').forEach(b => b.disabled = true);
+
   const circulo = fila.querySelector('.estado-circulo');
-  if (circulo) circulo.classList.replace('rojo', 'verde');
+  if (circulo) {
+    circulo.classList.replace('rojo', 'verde');
+  }
+
   alert('¡Inscripción aprobada!');
 }
-
 async function rechazarInscripcion(item, fila) {
   const confirma = confirm('¿Seguro que deseas rechazar y liberar cartones?');
   if (!confirma) return;
@@ -3349,12 +3508,77 @@ async function detectarDuplicadosAprobadosPorReferencia() {
 
 function imprimirLista() {
   const lista = document.getElementById('listaAprobados');
-  if (!lista.innerHTML.trim()) {
+
+  if (!lista || !lista.innerHTML.trim()) {
     alert('Primero debes generar la lista de aprobados.');
     return;
   }
-  window.print();
+
+  const ventana = window.open('', '_blank');
+
+  ventana.document.write(`
+    <html>
+      <head>
+        <title>Lista de Aprobados</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            color: #000;
+            padding: 00px;
+          }
+
+          h1 {
+            text-align: center;
+            font-size: 16px;
+            margin: 0 0 4px 0;
+          }
+
+          .fecha {
+            text-align: center;
+            font-size: 9px;
+            margin-bottom: 8px;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 18px;
+          }
+
+          th, td {
+            border: 1px solid #999;
+            padding: 2px 3px;
+            text-align: center;
+            vertical-align: middle;
+          }
+
+          th {
+            background: #eee;
+            font-weight: bold;
+          }
+
+          @page {
+            size: letter portrait;
+            margin: 6mm;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Lista de Aprobados</h1>
+        <div class="fecha">${new Date().toLocaleString()}</div>
+        ${lista.innerHTML}
+      </body>
+    </html>
+  `);
+
+  ventana.document.close();
+
+  ventana.onload = function () {
+    ventana.focus();
+    ventana.print();
+  };
 }
+
 
 // ==================== FUNCIONES FALTANTES ====================
 async function subirCartones() {
@@ -3897,7 +4121,7 @@ async function seleccionarAleatorioSeguro() {
 
   const { data, error } = await supabase.rpc('rpc_reservar_cartones_aleatorios', {
     _cantidad: faltan,
-    _cedula: usuario.cedula,
+    _cedula: String(usuario.cedula || '').trim(),
     _partida_id: null
   });
 
@@ -3915,7 +4139,7 @@ async function seleccionarAleatorioSeguro() {
     return;
   }
 
-  usuario.cartones.push(...resultado.cartones);
+  usuario.cartones = [...new Set([...usuario.cartones.map(Number), ...resultado.cartones.map(Number)])];
 
   await cargarCartones();
 
@@ -4047,6 +4271,34 @@ function copiarTodoPagoMovil() {
   navigator.clipboard.writeText(texto)
     .then(() => alert('✅ Todos los datos de pago copiados al portapapeles'))
     .catch(() => alert('❌ Error al copiar'));
+}
+
+
+async function copiarListaAprobados() {
+  const filas = document.querySelectorAll('#contenedor-aprobados tbody tr');
+
+  let texto = 'LISTA DE APROBADOS\n\n';
+
+  filas.forEach(fila => {
+    const celdas = fila.querySelectorAll('td');
+
+    if (celdas.length >= 3) {
+      texto += `${celdas[0].innerText} | ${celdas[1].innerText} | ${celdas[2].innerText}\n`;
+    }
+  });
+
+  try {
+    await navigator.clipboard.writeText(texto);
+    alert('✅ Lista copiada');
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = texto;
+    document.body.appendChild(area);
+    area.select();
+    document.execCommand('copy');
+    document.body.removeChild(area);
+    alert('✅ Lista copiada');
+  }
 }
 // ─── NAEGACIÓN POR PESTAÑAS DEL ADMIN ───
 function cambiarTab(tabId) {
