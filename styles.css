@@ -2555,3 +2555,11 @@ input:checked + .toggle-slider:before {
 #contenedor-aprobados td:nth-child(3) {
   width: 33%;
 }
+#contenedor-aprobados,
+#contenedor-aprobados * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+#contenedor-aprobados {
+  overflow: visible !important;
+}
