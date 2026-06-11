@@ -2381,6 +2381,7 @@ else {
 }
 
   cont.appendChild(mensaje);
+  mensaje.classList.add('estado-consulta');
 
   // Mostrar cartones aunque esté pendiente
   todas.forEach(item => {
