@@ -2568,3 +2568,6 @@ input:checked + .toggle-slider:before {
   cursor: pointer;
   font-size: 18px; 
 }
+.estado-circulo.naranja {
+  background: #ff9800 !important;
+}
