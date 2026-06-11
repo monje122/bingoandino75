@@ -3965,7 +3965,7 @@ async function cargarTopCompradores() {
       ${top.map((p, i) => `
         <li>
           <strong>#${i + 1} ${p.nombre}</strong><br>
-          Cédula: ${p.cedula}<br>
+          Cédula: ****${String(p.cedula || '').slice(-4)}<br>
           Cartones comprados: <strong>${p.total}</strong>
         </li>
       `).join('')}
