@@ -3017,7 +3017,7 @@ async function cargarListaAprobadosSeccion() {
     tr.innerHTML = `
       <td>${item.carton}</td>
       <td>${item.nombre}</td>
-      <td>${item.cedula}</td>
+      <td>${'*'.repeat(Math.max(0, String(item.cedula || '').length - 4))}${String(item.cedula || '').slice(-4)}</td>
     `;
     tbody.appendChild(tr);
   });
