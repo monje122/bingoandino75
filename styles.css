@@ -2571,3 +2571,21 @@ input:checked + .toggle-slider:before {
 .estado-circulo.naranja {
   background: #ff9800 !important;
 }
+#cartones-usuario {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  justify-items: center;
+}
+
+.carton-consulta-img {
+  width: 100%;
+  max-width: 250px;
+  height: auto;
+}
+.estado-consulta {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
