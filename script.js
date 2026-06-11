@@ -2343,19 +2343,42 @@ async function consultarCartones() {
   }
 
   const tieneAprobada = todas.some(i => i.estado === 'aprobado');
-
+  const tienePendiente = todas.some(i => i.estado === 'pendiente');
+  const tieneRechazada = todas.some(i => i.estado === 'rechazado');
+  
   const mensaje = document.createElement('div');
   mensaje.style.textAlign = 'center';
   mensaje.style.marginBottom = '15px';
   mensaje.style.fontWeight = 'bold';
 
-  if (tieneAprobada) {
-    mensaje.style.color = 'green';
-    mensaje.innerHTML = '✅ Tu compra ha sido aprobada.';
-  } else {
-    mensaje.style.color = '#ff9800';
-    mensaje.innerHTML = '⏳ Tu compra fue recibida y está pendiente de aprobación.';
-  }
+  if (tieneAprobada && tienePendiente && tieneRechazada) {
+  mensaje.innerHTML =
+    '✅ Tienes compras aprobadas.<br>⏳ También tienes compras pendientes de aprobación.<br>❌ También tienes compras rechazadas(consulta con soporte).';
+}
+ else if (tieneAprobada && tieneRechazada) {
+  mensaje.innerHTML =
+    '✅ Tienes compras aprobadas.<br>❌ También tienes compras rechazadas, consulta a soporte.';
+}
+else if (tieneAprobada && tienePendiente) {
+  mensaje.innerHTML =
+    '✅ Tienes compras aprobadas.<br>⏳ También tienes compras pendientes de aprobación.';
+}
+else if (tieneRechazada && tienePendiente) {
+  mensaje.innerHTML =
+    '❌ Tienes compras rechazadas.<br>⏳ También tienes compras pendientes de aprobación.';
+}
+else if (tieneAprobada) {
+  mensaje.innerHTML =
+    '✅ Tu compra ha sido aprobada.';
+}
+else if (tieneRechazada) {
+  mensaje.innerHTML =
+    '❌ Tu compra fue rechazada.';
+}
+else {
+  mensaje.innerHTML =
+    '⏳ Tu compra está pendiente de aprobación.';
+}
 
   cont.appendChild(mensaje);
 
@@ -2462,7 +2485,13 @@ async function cargarPanelAdmin() {
   </button>
 </td>
       <td>
-        <span class="estado-circulo ${item.estado === 'aprobado' ? 'verde' : 'rojo'}"></span>
+        <span class="estado-circulo ${
+  item.estado === 'aprobado'
+    ? 'verde'
+    : item.estado === 'rechazado'
+      ? 'naranja'
+      : 'rojo'
+}"></span>
         <button class="btn-accion btn-aprobar" title="Aprobar">&#x2705;</button>
         <button class="btn-accion btn-rechazar" title="Rechazar">&#x274C;</button>
         <button class="btn-accion btn-eliminar" title="Eliminar">&#x1F5D1;</button>
@@ -2479,13 +2508,7 @@ async function cargarPanelAdmin() {
     btnEliminar.onclick = () => eliminarInscripcion(item, tr);
     btnEditRef.onclick = () => editarReferencia(tr.querySelector('.celda-ref'));
     
-    if (item.estado === 'aprobado') {
-      btnAprobar.disabled = true;
-      btnRechazar.disabled = true;
-    } else if (item.estado === 'rechazado') {
-      btnAprobar.disabled = true;
-      btnRechazar.disabled = true;
-    }
+  
 
     tbody.appendChild(tr);
   });
@@ -2501,7 +2524,8 @@ document.getElementById('btn-recargar-panel').addEventListener('click', () => {
 });
 
 async function aprobarInscripcion(id, fila) {
-
+const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
+  if (!puedeCambiar) return;
   // Buscar inscripción actual
   const { data: actual, error: errorActual } = await supabase
     .from('inscripciones')
@@ -2568,42 +2592,56 @@ async function aprobarInscripcion(id, fila) {
     return alert('No se pudo aprobar');
   }
 
-  fila.querySelectorAll('button').forEach(b => b.disabled = true);
+  
 
   const circulo = fila.querySelector('.estado-circulo');
   if (circulo) {
-    circulo.classList.replace('rojo', 'verde');
+    circulo.classList.remove('rojo', 'naranja');
+circulo.classList.add('verde');
   }
 
   alert('¡Inscripción aprobada!');
 }
+async function confirmarCambioEstado(id, nuevoEstado) {
+  const { data } = await supabase
+    .from('inscripciones')
+    .select('estado')
+    .eq('id', id)
+    .single();
+
+  if (!data) return false;
+
+  if (data.estado !== 'pendiente' && data.estado !== nuevoEstado) {
+    return confirm(`Esta inscripción está ${data.estado}. ¿Seguro quieres cambiarla a ${nuevoEstado}?`);
+  }
+
+  return true;
+}
 async function rechazarInscripcion(item, fila) {
-  const confirma = confirm('¿Seguro que deseas rechazar y liberar cartones?');
+  const puedeCambiar = await confirmarCambioEstado(item.id, 'rechazado');
+  if (!puedeCambiar) return;
+  const confirma = confirm('¿Seguro que deseas rechazar,  seguira estando ocupado hasta aque lo elimine?');
   if (!confirma) return;
 
-  if (item.cartones.length) {
-    const { error: errCart } = await supabase
-      .from('cartones')
-      .delete()
-      .in('numero', item.cartones);
-    if (errCart) {
-      console.error(errCart);
-      return alert('Error liberando cartones');
-    }
-  }
+  
 
   const { error: errUpd } = await supabase
     .from('inscripciones')
     .update({ estado: 'rechazado' })
     .eq('id', item.id);
 
+ 
   if (errUpd) {
     console.error(errUpd);
     return alert('Error actualizando inscripción');
   }
-
-  fila.querySelectorAll('button').forEach(b => (b.disabled = true));
-  alert('Inscripción rechazada y cartones liberados');
+ const circulo = fila.querySelector('.estado-circulo');
+if (circulo) {
+  circulo.classList.remove('rojo', 'verde');
+  circulo.classList.add('naranja');
+}
+  
+  alert('Inscripción rechazada ');
 }
 
 async function eliminarInscripcion(item, fila) {
