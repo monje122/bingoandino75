@@ -2573,14 +2573,14 @@ input:checked + .toggle-slider:before {
 }
 #cartones-usuario {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   justify-items: center;
 }
 
 .carton-consulta-img {
   width: 100%;
-  max-width: 250px;
+  max-width: 150px;
   height: auto;
 }
 .estado-consulta {
