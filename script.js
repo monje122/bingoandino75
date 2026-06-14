@@ -14,6 +14,45 @@ let detectorIniciado = false;
 let adminSession = null;
 let sesionActiva = false;
 
+const ultimoEstadoProcesado = new Map();
+const estadoEnProceso = new Set();
+
+async function procesarEstadoUnaVez(id, fila, nuevoEstado, accion) {
+  const claveProceso = `${id}-${nuevoEstado}`;
+
+  const estadoActualFila = fila?.dataset?.estadoActual || '';
+  const ultimoEstado = ultimoEstadoProcesado.get(id) || estadoActualFila;
+
+  // Si ya está en ese mismo estado, no hace nada
+  if (ultimoEstado === nuevoEstado) {
+    console.log(`Inscripción ${id} ya está en estado ${nuevoEstado}. No se repite.`);
+    return;
+  }
+
+  // Si ya se está procesando esa misma acción, no repite
+  if (estadoEnProceso.has(claveProceso)) {
+    console.log(`Ya se está procesando ${nuevoEstado} para inscripción ${id}`);
+    return;
+  }
+
+  estadoEnProceso.add(claveProceso);
+
+  try {
+    const ok = await accion();
+
+    if (ok !== false) {
+      ultimoEstadoProcesado.set(id, nuevoEstado);
+
+      if (fila) {
+        fila.dataset.estadoActual = nuevoEstado;
+      }
+    }
+  } catch (error) {
+    console.error('Error procesando estado:', error);
+  } finally {
+    estadoEnProceso.delete(claveProceso);
+  }
+}
 const CONFIG_OTP = {
   ACTIVADO: true,                     // Activar/desactivar OTP
   TIEMPO_EXPIRACION: 10,              // Minutos para usar el código
@@ -2509,6 +2548,7 @@ cartonesOcupados = await fetchTodosLosOcupados();
 
   data.forEach(item => {
     const tr = document.createElement('tr');
+    tr.dataset.estadoActual = item.estado || 'pendiente';
     tr.innerHTML = `
       <td>${item.nombre}</td>
       <td>
@@ -2560,8 +2600,19 @@ cartonesOcupados = await fetchTodosLosOcupados();
     const btnEliminar = tr.querySelector('.btn-eliminar');
     const btnEditRef = tr.querySelector('.btn-edit-ref');
 
-    btnAprobar.onclick = () => aprobarInscripcion(item.id, tr);
-    btnRechazar.onclick = () => rechazarInscripcion(item, tr);
+   btnAprobar.onclick = () => procesarEstadoUnaVez(
+  item.id,
+  tr,
+  'aprobado',
+  () => aprobarInscripcion(item.id, tr)
+);
+
+btnRechazar.onclick = () => procesarEstadoUnaVez(
+  item.id,
+  tr,
+  'rechazado',
+  () => rechazarInscripcion(item, tr)
+);
     btnEliminar.onclick = () => eliminarInscripcion(item, tr);
     btnEditRef.onclick = () => editarReferencia(tr.querySelector('.celda-ref'));
     
@@ -2581,8 +2632,9 @@ document.getElementById('btn-recargar-panel').addEventListener('click', () => {
 });
 
 async function aprobarInscripcion(id, fila) {
-const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
-  if (!puedeCambiar) return;
+  const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
+  if (!puedeCambiar) return false;
+
   // Buscar inscripción actual
   const { data: actual, error: errorActual } = await supabase
     .from('inscripciones')
@@ -2592,7 +2644,7 @@ const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
 
   if (errorActual || !actual) {
     alert('No se pudo verificar la inscripción');
-    return;
+    return false;
   }
 
   const misCartones = (actual.cartones || []).map(String);
@@ -2606,7 +2658,7 @@ const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
 
   if (errorAprobados) {
     alert('No se pudieron verificar duplicados');
-    return;
+    return false;
   }
 
   const duplicados = [];
@@ -2625,7 +2677,6 @@ const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
   });
 
   if (duplicados.length > 0) {
-
     const mensaje = duplicados
       .map(d => `Cartón ${d.carton} ya aprobado para ${d.nombre}`)
       .join('\n');
@@ -2635,7 +2686,7 @@ const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
       mensaje
     );
 
-    return;
+    return false;
   }
 
   // Aprobar
@@ -2646,18 +2697,20 @@ const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
 
   if (error) {
     console.error(error);
-    return alert('No se pudo aprobar');
+    alert('No se pudo aprobar');
+    return false;
   }
-
-  
 
   const circulo = fila.querySelector('.estado-circulo');
   if (circulo) {
     circulo.classList.remove('rojo', 'naranja');
-circulo.classList.add('verde');
+    circulo.classList.add('verde');
   }
 
+  fila.dataset.estadoActual = 'aprobado';
+
   alert('¡Inscripción aprobada!');
+  return true;
 }
 async function confirmarCambioEstado(id, nuevoEstado) {
   const { data } = await supabase
@@ -2676,29 +2729,32 @@ async function confirmarCambioEstado(id, nuevoEstado) {
 }
 async function rechazarInscripcion(item, fila) {
   const puedeCambiar = await confirmarCambioEstado(item.id, 'rechazado');
-  if (!puedeCambiar) return;
-  const confirma = confirm('¿Seguro que deseas rechazar,  seguira estando ocupado hasta aque lo elimine?');
-  if (!confirma) return;
+  if (!puedeCambiar) return false;
 
-  
+  const confirma = confirm('¿Seguro que deseas rechazar, seguirá estando ocupado hasta que lo elimines?');
+  if (!confirma) return false;
 
   const { error: errUpd } = await supabase
     .from('inscripciones')
     .update({ estado: 'rechazado' })
     .eq('id', item.id);
 
- 
   if (errUpd) {
     console.error(errUpd);
-    return alert('Error actualizando inscripción');
+    alert('Error actualizando inscripción');
+    return false;
   }
- const circulo = fila.querySelector('.estado-circulo');
-if (circulo) {
-  circulo.classList.remove('rojo', 'verde');
-  circulo.classList.add('naranja');
-}
-  
-  alert('Inscripción rechazada ');
+
+  const circulo = fila.querySelector('.estado-circulo');
+  if (circulo) {
+    circulo.classList.remove('rojo', 'verde');
+    circulo.classList.add('naranja');
+  }
+
+  fila.dataset.estadoActual = 'rechazado';
+
+  alert('Inscripción rechazada');
+  return true;
 }
 
 async function eliminarInscripcion(item, fila) {
