@@ -1230,7 +1230,7 @@ function iniciarDetectorActividad() {
 
   console.log('👀 Iniciando detector de actividad');
 
-  ['click', 'mousemove', 'keypress', 'scroll'].forEach(event => {
+ ['click', 'keypress', 'scroll', 'touchstart'].forEach(event => {
     document.addEventListener(event, () => {
       if (sesionActiva) {
         actualizarActividadSesion();
@@ -1717,13 +1717,17 @@ async function obtenerMontoTotalRecaudado() {
 }
 
 async function contarCartonesVendidos() {
+  await obtenerTotalCartones();
+
   const { count, error } = await supabase
     .from('cartones')
-    .select('numero', { count: 'exact', head: true });
+    .select('numero', { count: 'exact', head: true })
+    .gte('numero', 1)
+    .lte('numero', totalCartones);
 
   if (error) {
     console.error('Error al contar cartones:', error);
-    return;
+    return 0;
   }
   
   const totalVendidosElement = document.getElementById('total-vendidos');
@@ -1774,7 +1778,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     sistemaListo = false;
   // Crear ta¿'bl ses nxiste
    document.getElementById('modal-terminos').classList.remove('oculto');
-   obtenerTotalCartones();
+   await obtenerTotalCartones();
   await cargarLinkWhatsapp();
   document.getElementById('overlay-carga').style.display = 'none';
 
@@ -1848,19 +1852,36 @@ function generarCartones() {
 }
 
 function actualizarPreseleccion() {
-  let cant = parseInt(document.getElementById('cantidadCartones').value) || 1;
-  const maxDisponibles = totalCartones - cartonesOcupados.length;
-  
-  if (modoCartones === 'fijo') {
-    cant = cantidadFijaCartones;
-    document.getElementById('cantidadCartones').value = cantidadFijaCartones;
-  } else {
-    cant = Math.min(cant, maxDisponibles);
-    document.getElementById('cantidadCartones').value = cant;
+  const input = document.getElementById('cantidadCartones');
+  const monto = document.getElementById('monto-preseleccion');
+
+  if (!input || !monto) return;
+
+  let cant = parseInt(input.value, 10);
+  if (isNaN(cant)) cant = 1;
+
+  // Solo contar cartones válidos dentro del rango configurado
+  const ocupadosValidos = cartonesOcupados
+    .map(Number)
+    .filter(n => n >= 1 && n <= totalCartones).length;
+
+  const maxDisponibles = Math.max(0, totalCartones - ocupadosValidos);
+
+  // Si ya no quedan cartones
+  if (maxDisponibles <= 0) {
+    input.value = 0;
+    monto.textContent = '0.00';
+    return;
   }
 
-  document.getElementById('monto-preseleccion').textContent =
-    (cant * precioPorCarton).toFixed(2);
+  if (modoCartones === 'fijo') {
+    cant = Math.min(cantidadFijaCartones, maxDisponibles);
+  } else {
+    cant = Math.max(1, Math.min(cant, maxDisponibles));
+  }
+
+  input.value = cant;
+  monto.textContent = (cant * precioPorCarton).toFixed(2);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1869,10 +1890,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnMenos = document.getElementById('btnMenos');
   const inputCantidad = document.getElementById('cantidadCartones');
 
+  if (inputCantidad) {
+    inputCantidad.min = '1';
+  }
+
   if (btnMas && inputCantidad) {
     btnMas.onclick = () => {
       if (modoCartones === 'fijo') return;
-      inputCantidad.stepUp();
+
+      let actual = parseInt(inputCantidad.value, 10);
+      if (isNaN(actual)) actual = 1;
+
+      const ocupadosValidos = cartonesOcupados
+        .map(Number)
+        .filter(n => n >= 1 && n <= totalCartones).length;
+
+      const maxDisponibles = Math.max(0, totalCartones - ocupadosValidos);
+
+      inputCantidad.value = Math.min(actual + 1, maxDisponibles);
       limpiarPromoPorCambioCantidad();
     };
   }
@@ -1880,29 +1915,39 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnMenos && inputCantidad) {
     btnMenos.onclick = () => {
       if (modoCartones === 'fijo') return;
-      inputCantidad.stepDown();
+
+      let actual = parseInt(inputCantidad.value, 10);
+      if (isNaN(actual)) actual = 1;
+
+      inputCantidad.value = Math.max(1, actual - 1);
       limpiarPromoPorCambioCantidad();
     };
   }
 
   if (inputCantidad) {
     inputCantidad.addEventListener('input', function () {
+      let valor = parseInt(this.value, 10);
+
+      if (isNaN(valor)) valor = 1;
+
       if (modoCartones === 'fijo') {
         this.value = cantidadFijaCartones;
+      } else {
+        this.value = Math.max(1, valor);
       }
+
       limpiarPromoPorCambioCantidad();
     });
   }
 
-  // ⏰ Hora Venezuela (mover aquí evita errores en móviles)
+  // ⏰ Hora Venezuela
   actualizarHoraVenezuela();
   setInterval(actualizarHoraVenezuela, 1000);
 
-  // 🛡️ Detector de actividad SOLO cuando el DOM existe
+  // 🛡️ Detector de actividad
   iniciarDetectorActividad();
 
 });
-
 
 function limpiarPromoPorCambioCantidad() {
   if (promocionSeleccionada) {
@@ -2004,7 +2049,15 @@ function confirmarCantidad() {
     cant = promo.cantidad;
   } else {
     cant = parseInt(document.getElementById('cantidadCartones').value);
-    const maxDisponibles = totalCartones - cartonesOcupados.length;
+    const ocupadosValidos = cartonesOcupados
+  .map(Number)
+  .filter(n => n >= 1 && n <= totalCartones).length;
+
+const maxDisponibles = Math.max(0, totalCartones - ocupadosValidos);
+
+if (maxDisponibles <= 0) {
+  return alert('No quedan cartones disponibles.');
+}
     
     if (modoCartones === 'fijo') {
       if (cant !== cantidadFijaCartones) {
@@ -2416,13 +2469,15 @@ async function elegirMasCartones() {
 
 // ==================== FUNCIOS DEL PANEL ADMIN ====================
 async function cargarPanelAdmin() {
- await Promise.all([
+await Promise.all([
+  obtenerTotalCartones(),
   obtenerMontoTotalRecaudado(),
   contarCartonesVendidos(),
   cargarModoCartonesAdmin(),
-  cargarCartones(),
   cargarPromocionesAdmin()
 ]);
+
+cartonesOcupados = await fetchTodosLosOcupados();
   
  
   const { data, error } = await supabase
@@ -2801,9 +2856,12 @@ function cerrarModalCarton() {
 }
 
 function actualizarContadorCartones(total, ocupados, seleccionados) {
-  const disponibles = total - ocupados - seleccionados;
+  const disponibles = Math.max(0, total - ocupados - seleccionados);
   const contador = document.getElementById('contadorCartones');
-  contador.textContent = `Cartones disponibles: ${disponibles} de ${total}`;
+
+  if (contador) {
+    contador.textContent = `Cartones disponibles: ${disponibles} de ${total}`;
+  }
 }
 
 // ==================== FUNCIONES AUXILIARES ====================
@@ -2914,7 +2972,11 @@ function seleccionarPromocion(numero) {
     return;
   }
   
-  const maxDisponibles = totalCartones - cartonesOcupados.length;
+  const ocupadosValidos = cartonesOcupados
+  .map(Number)
+  .filter(n => n >= 1 && n <= totalCartones).length;
+
+const maxDisponibles = Math.max(0, totalCartones - ocupadosValidos);
   if (promo.cantidad > maxDisponibles) {
     alert(`No hay suficientes cartones disponibles para esta promoción. Disponibles: ${maxDisponibles}`);
     return;
@@ -3836,7 +3898,33 @@ function agregarBotonesAdicionalesAdmin() {
     loginSection.insertAdjacentHTML('beforeend', botonesHTML);
   }
 }
+
 let canalInscripciones = null;
+let timerRecargaAdmin = null;
+let cargandoPanelAdmin = false;
+
+function programarRecargaAdmin() {
+  clearTimeout(timerRecargaAdmin);
+
+  timerRecargaAdmin = setTimeout(async () => {
+    if (cargandoPanelAdmin) return;
+    if (!sesionActiva) return;
+
+    const panel = document.getElementById('admin-panel');
+    if (!panel || panel.classList.contains('oculto')) return;
+
+    cargandoPanelAdmin = true;
+
+    try {
+      console.log('🔄 Recargando panel admin con pausa...');
+      await cargarPanelAdmin();
+    } catch (error) {
+      console.error('❌ Error recargando panel admin:', error);
+    } finally {
+      cargandoPanelAdmin = false;
+    }
+  }, 800);
+}
 
 function activarRefrescoAutomaticoAdmin() {
   if (canalInscripciones) return;
@@ -3850,18 +3938,13 @@ function activarRefrescoAutomaticoAdmin() {
         schema: 'public',
         table: 'inscripciones'
       },
-      async (payload) => {
+      (payload) => {
         console.log('🔄 Cambio detectado en inscripciones:', payload);
-
-        if (sesionActiva && !document.getElementById('admin-panel').classList.contains('oculto')) {
-          await cargarPanelAdmin();
-        }
+        programarRecargaAdmin();
       }
     )
     .subscribe();
 }
-let timerReserva = null;
-
 function iniciarContadorReserva(minutos = 5) {
   const div = document.getElementById('contadorReserva');
 
