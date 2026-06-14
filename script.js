@@ -54,6 +54,7 @@ let usuario = {
 };
 
 let totalCartones = 0;
+let timerReserva = null;
 // ==================== VERSIÓN MÁS SIMPLE ====================
 let contador = 0;
 
