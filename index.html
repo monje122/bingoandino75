@@ -226,7 +226,7 @@
       <input type="text" id="pago_cedula" placeholder="Tu cédula de Pago Móvil">
     </div>
 <h2>💳 Sube tu comprobante</h2>
-    <input type="file" accept="image/*" id="comprobante">
+    <input type="file" accept="image/jpeg,image/png,image/webp" id="comprobante">
     <input type="text" id="referencia4dig" maxlength="4" placeholder="Últimos 4 dígitos de la referencia">
 
     <button id="btnEnviarComprobante" onclick="enviarComprobante()">Enviar comprobante</button>
@@ -476,7 +476,7 @@
         <h3>🖼️ Imágenes de Cartones</h3>
       </div>
       <div class="upload-area">
-        <input type="file" id="cartonImageInput" multiple accept="image/*">
+        <input type="file" id="cartonImageInput" multiple accept="image/jpeg,image/png,image/webp">
         <button onclick="subirCartones()" class="btn-primary">⬆️ Subir Imágenes</button>
         <button onclick="borrarCartones()" class="btn-danger">🗑️ Borrar Todas</button>
       </div>
@@ -589,7 +589,7 @@
       
       <div class="panel-section">
   <h3>🏆 Imagen de premios del inicio</h3>
-  <input type="file" id="inputPremiosInicio" accept="image/*">
+  <input type="file" id="inputPremiosInicio" accept="image/jpeg,image/png,image/webp">
   <button onclick="subirImagenPremiosInicio()" class="btn-primary">💾 Guardar imagen</button>
         <button onclick="eliminarImagenPremiosInicio()">
 🗑 Eliminar Imagen
