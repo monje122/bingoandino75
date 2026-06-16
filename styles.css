@@ -15,7 +15,7 @@
   --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.2);
   --border-radius: 12px;
   --border-radius-sm: 8px;
-  --transition: all 0.3s ease;
+ --transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease, border-color .2s ease, opacity .2s ease;
 }
 
 /* Reset y estilos base */
@@ -256,14 +256,10 @@ button:disabled {
   width: 400px;
   color: var(--dark);
   box-shadow: var(--shadow-lg);
-  animation: slideUp 0.4s ease;
   border: 3px solid var(--secondary);
 }
 
-@keyframes slideUp {
-  from { transform: translateY(50px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
+
 
 .modal-contenido h2 {
   color: var(--dark);
@@ -412,7 +408,6 @@ button:disabled {
   background: linear-gradient(135deg, var(--secondary), #ffb347);
   border-radius: 50px;
   box-shadow: var(--shadow-lg);
-  animation: slideUp 0.5s ease;
 }
 
 #redes-sociales a {
@@ -780,7 +775,7 @@ button:disabled {
   cursor: pointer;
   border-bottom: 3px solid transparent;
   margin-bottom: -3px;
-  transition: all 0.3s;
+  transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease, border-color .2s ease;
   white-space: nowrap;
 }
 
@@ -805,10 +800,6 @@ button:disabled {
   display: block;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
 
 /* Tarjetas de estadísticas */
 .stats-grid {
@@ -949,7 +940,7 @@ button:disabled {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease, border-color .2s ease;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1147,7 +1138,7 @@ button:disabled {
   border-radius: 12px;
   padding: 20px;
   border: 2px solid #e8e8e8;
-  transition: all 0.2s;
+ transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease, border-color .2s ease;
 }
 
 .promo-admin-card:hover {
@@ -2588,4 +2579,63 @@ input:checked + .toggle-slider:before {
   text-align: center;
   font-weight: bold;
   margin-bottom: 10px;
+}
+/* ═══════════════════════════════════════
+   OPTIMIZACIÓN DE RENDIMIENTO
+   ═══════════════════════════════════════ */
+
+/* Reduce animaciones pesadas en móviles */
+@media (max-width: 600px) {
+  .carton::before,
+  .btn-promo::before {
+    display: none !important;
+  }
+
+  .carton:hover,
+  .btn-promo:hover,
+  button:hover,
+  .btn:hover {
+    transform: none !important;
+  }
+
+  .modal {
+    backdrop-filter: none !important;
+  }
+
+  .selector-cantidad,
+  #tabla-comprobantes,
+  .pago-movil-premium {
+    backdrop-filter: none !important;
+  }
+}
+
+/* Para dispositivos o usuarios que prefieren menos movimiento */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Mejora render de imágenes grandes */
+.imagen-premios-inicio,
+.carton-consulta-img,
+#tabla-comprobantes img,
+#imagen-carton-modal {
+  content-visibility: auto;
+}
+/* Evita saltos visuales al usar content-visibility */
+.imagen-premios-inicio {
+  contain-intrinsic-size: 420px 280px;
+}
+
+.carton-consulta-img {
+  contain-intrinsic-size: 180px 120px;
+}
+
+#imagen-carton-modal {
+  contain-intrinsic-size: 300px 300px;
 }
