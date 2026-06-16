@@ -1,5 +1,5 @@
 var supabase = window.supabase;
-// Configuración del admin
+// Configuración del amin
 let sistemaListo = false;
 // Variables globales
 let cartonesOcupados = [];
