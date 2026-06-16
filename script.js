@@ -327,14 +327,11 @@ document.addEventListener('DOMContentLoaded', function() {
 // ==================== NUEVA: VERIFICACIÓN SESIÓN ÚNICA POR USUARIO ====================
 // Función para verificar si el usuario YA tiene sesión activa (en cualquier navegador)
 async function verificarSesionAdmin() {
-  const sessionToken =
-    sessionStorage.getItem('admin_session_token') ||
-    localStorage.getItem('admin_session_token');
+ const sessionToken = sessionStorage.getItem('admin_session_token');
 
-  const deviceId =
-    sessionStorage.getItem('device_id') ||
-    localStorage.getItem('admin_device_id');
-
+const deviceId =
+  sessionStorage.getItem('device_id') ||
+  localStorage.getItem('admin_device_id');
   if (!sessionToken || !deviceId) return false;
 
   try {
@@ -489,32 +486,33 @@ async function loginAdmin() {
     console.log('✅ Credenciales verificadas correctamente');
     
     // Guardar credenciales temporalmente
-    sessionStorage.setItem('pending_email', email);
-    sessionStorage.setItem('pending_deviceId', deviceId);
-    sessionStorage.setItem('pending_password', password); // Solo para referencia
-    
-    errorDiv.innerHTML = '✅ <strong>Credenciales correctas</strong><br>📧 Enviando código de verificación...';
-    errorDiv.className = 'success';
-    
-    // Enviar OTP
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email: email,
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: window.location.origin
-      }
-    });
-    
-    if (otpError) {
-      console.error('❌ Error enviando OTP:', otpError);
-      
-      // Fallback: continuar sin OTP si hay error
-      errorDiv.textContent = '⚠️ Error enviando OTP. Continuando sin verificación...';
-      
-      // Proceder directamente a crear sesión
-      await crearSesionDirecta(email, deviceId);
-      return;
-    }
+    // Guardar solo datos necesarios, nunca la contraseña
+sessionStorage.setItem('pending_email', email.toLowerCase().trim());
+sessionStorage.setItem('pending_deviceId', deviceId);
+
+errorDiv.innerHTML = '✅ <strong>Credenciales correctas</strong><br>📧 Enviando código de verificación...';
+errorDiv.className = 'success';
+
+// Enviar OTP
+const { error: otpError } = await supabase.auth.signInWithOtp({
+  email: email.toLowerCase().trim(),
+  options: {
+    shouldCreateUser: false,
+    emailRedirectTo: window.location.origin
+  }
+});
+
+if (otpError) {
+  console.error('❌ Error enviando OTP:', otpError);
+
+  errorDiv.textContent = '❌ No se pudo enviar el código OTP. Intenta de nuevo.';
+  errorDiv.className = 'error';
+
+  document.getElementById('admin-password').value = '';
+  return;
+}
+
+document.getElementById('admin-password').value = '';
     
     console.log('✅ OTP enviado a:', email);
     
@@ -695,14 +693,17 @@ async function verificarOTP() {
     
     // 3. GUARDAR DATOS DE SESIÓN
     sessionStorage.setItem('admin_session_token', result.sessionToken);
-    sessionStorage.setItem('admin_email', result.email);
-    sessionStorage.setItem('session_expires', result.expiresAt);
-    sessionStorage.setItem('device_id', result.deviceId);
-    localStorage.setItem('admin_session_token', result.sessionToken);
-    
-    localStorage.setItem('admin_email', result.email);
-    localStorage.setItem('session_expires', result.expiresAt);
-    localStorage.setItem('admin_device_id', result.deviceId);
+sessionStorage.setItem('admin_email', result.email);
+sessionStorage.setItem('session_expires', result.expiresAt);
+sessionStorage.setItem('device_id', result.deviceId);
+
+// El deviceId sí puede quedar en localStorage
+localStorage.setItem('admin_device_id', result.deviceId);
+
+// Limpia tokens viejos que hayan quedado guardados
+localStorage.removeItem('admin_session_token');
+localStorage.removeItem('admin_email');
+localStorage.removeItem('session_expires');
     
     // Actualizar deviceId si es necesario
     if (result.deviceId && result.deviceId !== deviceId) {
@@ -717,6 +718,7 @@ async function verificarOTP() {
     sessionStorage.removeItem('pending_email');
     sessionStorage.removeItem('pending_deviceId');
     sessionStorage.removeItem('pending_password');
+                             
     
     // 4. MOSTRAR ÉXITO Y REDIRIGIR
     mostrarErrorOTP('✅ ¡Autenticación completada! Redirigiendo...');
@@ -926,62 +928,7 @@ function mostrarErrorOTP(mensaje) {
 }
 
 // Función fallback si OTP falla
-async function crearSesionDirecta(email, deviceId) {
-  try {
-    const response = await fetch(
-      'https://dbkixcpwirjwjvjintkr.supabase.co/functions/v1/admin-auth',
-      {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRia2l4Y3B3aXJqd2p2amludGtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYwNjYxNDksImV4cCI6MjA2MTY0MjE0OX0.QJmWLWSe-pRYwxWeel8df7JLhNUvMKaTpL0MCDorgho'
-        },
-        body: JSON.stringify({ 
-          email: email.toLowerCase().trim(), 
-          deviceId: deviceId,
-          action: 'create_session_direct'
-        })
-      }
-    );
-    
-    const result = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(result.error || 'Error creando sesión');
-    }
-    
-    // Proceder con login normal
-    sessionStorage.setItem('admin_session_token', result.sessionToken);
-    sessionStorage.setItem('admin_email', result.email);
-    sessionStorage.setItem('session_expires', result.expiresAt);
-    sessionStorage.setItem('device_id', result.deviceId);
-    
-    adminSession = { email: result.email, token: result.sessionToken };
-    sesionActiva = true;
-    
-    const errorDiv = document.getElementById('admin-error');
-    errorDiv.innerHTML = '✅ <strong>¡Acceso concedido!</strong><br>Sesión única activa';
-    errorDiv.className = 'success';
-    
-    setTimeout(() => {
-      document.getElementById('admin-login').classList.add('oculto');
-      document.getElementById('admin-panel').classList.remove('oculto');
-      document.getElementById('admin-email-display').textContent = result.email;
-      
-      iniciarDetectorActividad();
-      resetInactivityTimer();
-      
-      cargarPanelAdmin();
-      
-    }, 1000);
-    
-  } catch (error) {
-    console.error('❌ Error en sesión directa:', error);
-    const errorDiv = document.getElementById('admin-error');
-    errorDiv.textContent = '❌ Error creando sesión: ' + error.message;
-    errorDiv.className = 'error';
-  }
-}
+
 
 // Función para forzar cierre remoto
 async function forzarCerrarSesionRemota() {
@@ -1307,9 +1254,7 @@ async function verificarSesionInicial() {
   document.getElementById('admin-login')?.classList.add('oculto');
   document.getElementById('bienvenida')?.classList.remove('oculto');
 
-  const sessionToken =
-    sessionStorage.getItem('admin_session_token') ||
-    localStorage.getItem('admin_session_token');
+  const sessionToken = sessionStorage.getItem('admin_session_token');
 
   if (!sessionToken) {
     console.log('ℹ️ No hay token guardado');
@@ -1320,9 +1265,7 @@ async function verificarSesionInicial() {
     const esValida = await verificarSesionAdmin();
 
     if (esValida) {
-      const email =
-        sessionStorage.getItem('admin_email') ||
-        localStorage.getItem('admin_email');
+     const email = sessionStorage.getItem('admin_email');
 
       console.log('✅ Sesión válida guardada para:', email);
 
@@ -2260,6 +2203,69 @@ function actualizarMonto() {
 }
 
 // ==================== FUNCIONES DE PAGO ====================
+function limpiarNombreArchivo(nombre) {
+  return String(nombre || 'archivo')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .toLowerCase();
+}
+
+async function convertirImagenAWebP(file, calidad = 0.85, maxWidth = 1600) {
+  if (!file || !file.type.startsWith('image/')) {
+    throw new Error('El archivo debe ser una imagen');
+  }
+
+  const img = new Image();
+  const objectUrl = URL.createObjectURL(file);
+
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    img.src = objectUrl;
+  });
+
+  let width = img.width;
+  let height = img.height;
+
+  if (width > maxWidth) {
+    height = Math.round((height * maxWidth) / width);
+    width = maxWidth;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, width, height);
+
+  URL.revokeObjectURL(objectUrl);
+
+  const blob = await new Promise(resolve => {
+    canvas.toBlob(resolve, 'image/webp', calidad);
+  });
+
+  if (!blob) {
+    throw new Error('No se pudo convertir la imagen a WebP');
+  }
+
+  const nombreWebP = limpiarNombreArchivo(file.name).replace(/\.[^.]+$/, '') + '.webp';
+
+  return new File([blob], nombreWebP, {
+    type: 'image/webp',
+    lastModified: Date.now()
+  });
+}
+
+function nombreCartonWebP(numero) {
+  return `SERIAL_BINGOANDINO75_CARTON_${String(numero).padStart(5, '0')}.webp`;
+}
+
+function urlCartonWebP(numero) {
+  return `${supabaseUrl}/storage/v1/object/public/cartones/${nombreCartonWebP(numero)}`;
+}
 async function enviarComprobante() {
   const boton = document.getElementById('btnEnviarComprobante');
   const textoOriginal = boton.textContent;
@@ -2284,17 +2290,39 @@ if (!PagoBanco || !PagoTelefono || !PagoCedula) {
 }
 
 guardarDatosPagoClienteAutomatico();
-    const archivo = document.getElementById('comprobante').files[0];
-    if (!archivo) throw new Error('Debes subir un comprobante');
+   const archivoOriginal = document.getElementById('comprobante').files[0];
+if (!archivoOriginal) throw new Error('Debes subir un comprobante');
 
-    const ext = archivo.name.split('.').pop();
-    const nombreArchivo = `${usuario.cedula}-${Date.now()}.${ext}`;
-    const { error: errorUpload } = await supabase.storage
-      .from('comprobantes')
-      .upload(nombreArchivo, archivo);
-    if (errorUpload) throw new Error('Error subiendo imagen');
+// Convertir automáticamente JPG / PNG / WEBP a WebP optimizado
+const archivoWebP = await convertirImagenAWebP(archivoOriginal, 0.85, 1600);
 
-    const urlPublica = `${supabaseUrl}/storage/v1/object/public/comprobantes/${nombreArchivo}`;
+const cedulaArchivo = String(usuario.cedula || '')
+  .replace(/\D/g, '') || 'sin-cedula';
+
+const idArchivo = crypto.randomUUID
+  ? crypto.randomUUID()
+  : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const nombreArchivo = `${cedulaArchivo}-${Date.now()}-${idArchivo}.webp`;
+
+const { error: errorUpload } = await supabase.storage
+  .from('comprobantes')
+  .upload(nombreArchivo, archivoWebP, {
+    contentType: 'image/webp',
+    upsert: false,
+    cacheControl: '31536000'
+  });
+
+if (errorUpload) {
+  throw new Error('Error subiendo comprobante: ' + errorUpload.message);
+}
+
+// URL pública del comprobante en WebP
+const { data: publicData } = supabase.storage
+  .from('comprobantes')
+  .getPublicUrl(nombreArchivo);
+
+const urlPublica = publicData.publicUrl;
 
     const promo = getPromocionSeleccionada();
     const monto = promo ? promo.precio : (usuario.cartones.length * (precioPorCarton || 0));
@@ -2480,7 +2508,9 @@ else {
   todas.forEach(item => {
     (item.cartones || []).forEach(num => {
       const img = document.createElement('img');
-      img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BINGOANDINO75_CARTON_${String(num).padStart(5, '0')}.jpg`;
+    img.src = urlCartonWebP(num);
+img.loading = 'lazy';
+img.alt = `Cartón ${num}`;
       img.classList.add('carton-consulta-img');
       img.style.margin = '5px';
       cont.appendChild(img);
@@ -2895,7 +2925,9 @@ function abrirModalCarton(numero, elemento) {
   cartonSeleccionadoTemporal = numero;
   cartonElementoTemporal = elemento;
   const img = document.getElementById('imagen-carton-modal');
-  img.src = `${supabaseUrl}/storage/v1/object/public/cartones/SERIAL_BINGOANDINO75_CARTON_${String(numero).padStart(5, '0')}.jpg`;
+  img.src = urlCartonWebP(numero);
+img.loading = 'lazy';
+img.alt = `Cartón ${numero}`;
 
   document.getElementById('modal-carton').classList.remove('oculto');
 
@@ -3773,9 +3805,18 @@ function imprimirLista() {
 
 
 // ==================== FUNCIONES FALTANTES ====================
+
+
+function nombreCartonWebPDesdeArchivo(fileName) {
+  const limpio = String(fileName || '')
+    .trim()
+    .replace(/\s+/g, '-');
+
+  return limpio.replace(/\.[^.]+$/, '.webp');
+}
 async function subirCartones() {
   const input = document.getElementById('cartonImageInput');
-  const files = input.files;
+  const files = Array.from(input.files || []);
   const status = document.getElementById('uploadStatus');
   status.innerHTML = '';
 
@@ -3784,39 +3825,53 @@ async function subirCartones() {
     return;
   }
 
-  status.innerHTML = '<p style="color:blue;">Cargando imágenes...</p>';
+  status.innerHTML = '<p style="color:blue;">Convirtiendo imágenes a WebP y subiendo...</p>';
 
   const errores = [];
+  let subidas = 0;
 
   for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const fileName = file.name;
+    const archivoOriginal = files[i];
 
     try {
+      const archivoWebP = await convertirImagenAWebP(archivoOriginal, 0.80, 1200);
+
+      // Mantiene el mismo nombre, pero cambia la extensión a .webp
+      // Ejemplo: SERIAL_BINGOANDINO75_CARTON_00001.jpg → SERIAL_BINGOANDINO75_CARTON_00001.webp
+      const fileName = nombreCartonWebPDesdeArchivo(archivoOriginal.name);
+
       const { error } = await supabase.storage
         .from('cartones')
-        .upload(fileName, file, {
-          cacheControl: '3600',
+        .upload(fileName, archivoWebP, {
+          cacheControl: '31536000',
+          contentType: 'image/webp',
           upsert: true
         });
 
       if (error) {
         errores.push(`Error subiendo ${fileName}: ${error.message}`);
+      } else {
+        subidas++;
       }
     } catch (err) {
-      errores.push(`Error inesperado en ${fileName}`);
+      errores.push(`Error inesperado en ${archivoOriginal.name}: ${err.message}`);
     }
   }
 
   input.value = '';
 
   if (errores.length) {
-    status.innerHTML = `<p style="color:red;">Se encontraron errores:</p><ul>${errores.map(e => `<li>${e}</li>`).join('')}</ul>`;
+    status.innerHTML = `
+      <p style="color:red;">Se subieron ${subidas}, pero hubo errores:</p>
+      <ul>${errores.map(e => `<li>${e}</li>`).join('')}</ul>
+    `;
   } else {
-    status.innerHTML = '<p style="color:green;">¡Todas las imágenes fueron subidas exitosamente!</p>';
+    status.innerHTML = `<p style="color:green;">✅ ${subidas} imágenes fueron convertidas a WebP y subidas exitosamente.</p>`;
   }
 
-  setTimeout(() => { status.innerHTML = ''; }, 5000);
+  setTimeout(() => {
+    status.innerHTML = '';
+  }, 7000);
 }
 
 async function borrarCartones() {
@@ -4137,42 +4192,76 @@ function activarTopCompradoresRealtime() {
     )
     .subscribe();
 }
+
 async function subirImagenPremiosInicio() {
   const input = document.getElementById('inputPremiosInicio');
   const estado = document.getElementById('estadoPremiosInicio');
-  const archivo = input.files[0];
+  const archivoOriginal = input.files[0];
 
-  if (!archivo) return alert('Selecciona una imagen');
-
-  const ext = archivo.name.split('.').pop();
-  const nombreArchivo = `premios-inicio-${Date.now()}.${ext}`;
-
-  estado.textContent = 'Subiendo...';
-
-  const { error: uploadError } = await supabase.storage
-    .from('imagenes')
-    .upload(nombreArchivo, archivo, { upsert: true });
-
-  if (uploadError) {
-    estado.textContent = 'Error subiendo imagen';
-    console.error(uploadError);
+  if (!archivoOriginal) {
+    alert('Selecciona una imagen');
     return;
   }
 
-  const url = `${supabaseUrl}/storage/v1/object/public/imagenes/${nombreArchivo}`;
+  try {
+    estado.textContent = 'Convirtiendo imagen a WebP...';
 
-  const { error } = await supabase
-    .from('configuracion')
-    .upsert([{ clave: 'imagen_premios_inicio', valore: url }], { onConflict: 'clave' });
+    // Convierte JPG / PNG / WEBP a WebP optimizado
+    const archivoWebP = await convertirImagenAWebP(archivoOriginal, 0.85, 1400);
 
-  if (error) {
-    estado.textContent = 'Error guardando imagen';
+    const idArchivo = crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const nombreArchivo = `premios-inicio-${Date.now()}-${idArchivo}.webp`;
+
+    estado.textContent = 'Subiendo imagen...';
+
+    const { error: uploadError } = await supabase.storage
+      .from('imagenes')
+      .upload(nombreArchivo, archivoWebP, {
+        contentType: 'image/webp',
+        cacheControl: '31536000',
+        upsert: false
+      });
+
+    if (uploadError) {
+      estado.textContent = 'Error subiendo imagen';
+      console.error(uploadError);
+      return;
+    }
+
+    // URL pública en WebP
+    const { data: publicData } = supabase.storage
+      .from('imagenes')
+      .getPublicUrl(nombreArchivo);
+
+    const url = publicData.publicUrl;
+
+    estado.textContent = 'Guardando configuración...';
+
+    const { error } = await supabase
+      .from('configuracion')
+      .upsert(
+        [{ clave: 'imagen_premios_inicio', valore: url }],
+        { onConflict: 'clave' }
+      );
+
+    if (error) {
+      estado.textContent = 'Error guardando imagen';
+      console.error(error);
+      return;
+    }
+
+    input.value = '';
+    estado.textContent = '✅ Imagen guardada en WebP';
+
+    await cargarImagenPremiosInicio();
+
+  } catch (error) {
     console.error(error);
-    return;
+    estado.textContent = '❌ Error: ' + error.message;
   }
-
-  estado.textContent = '✅ Imagen guardada';
-  await cargarImagenPremiosInicio();
 }
 
 async function cargarImagenPremiosInicio() {
