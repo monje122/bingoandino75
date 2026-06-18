@@ -2660,7 +2660,48 @@ document.getElementById('pendientes-count').textContent = pendientes;
 document.getElementById('btn-recargar-panel').addEventListener('click', () => {
   cargarPanelAdmin();  // Llama directamente a la función que refresca el contenido
 });
+function ordenarPendientesArriba() {
+  const tbody = document.querySelector('#tabla-comprobantes tbody');
+  if (!tbody) return;
 
+  const prioridad = {
+    pendiente: 0,
+    rechazado: 1,
+    aprobado: 2
+  };
+
+  const filas = Array.from(tbody.querySelectorAll('tr')).map((fila, index) => ({
+    fila,
+    index
+  }));
+
+  filas.sort((a, b) => {
+    const estadoA = obtenerEstadoFila(a.fila);
+    const estadoB = obtenerEstadoFila(b.fila);
+
+    const prioridadA = prioridad[estadoA] ?? 99;
+    const prioridadB = prioridad[estadoB] ?? 99;
+
+    return prioridadA - prioridadB || a.index - b.index;
+  });
+
+  filas.forEach(({ fila }) => tbody.appendChild(fila));
+}
+
+function obtenerEstadoFila(fila) {
+  const estadoDataset = fila.dataset.estadoActual;
+
+  if (estadoDataset) {
+    return estadoDataset.toLowerCase();
+  }
+
+  const circulo = fila.querySelector('.estado-circulo');
+
+  if (circulo?.classList.contains('verde')) return 'aprobado';
+  if (circulo?.classList.contains('naranja')) return 'rechazado';
+
+  return 'pendiente';
+}
 async function aprobarInscripcion(id, fila) {
   const puedeCambiar = await confirmarCambioEstado(id, 'aprobado');
   if (!puedeCambiar) return false;
@@ -4630,7 +4671,7 @@ function cambiarTab(tabId) {
   event.target.classList.add('active');
 }
 
-// ==================== EXPORTAR FUNCIONES ====================
+// ================== EXPORTAR FUNCIONES ====================
 window.mostrarVentana = mostrarVentana;
 window.guardarDatosInscripcion = guardarDatosInscripcion;
 window.confirmarCantidad = confirmarCantidad;
