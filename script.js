@@ -2212,51 +2212,377 @@ function limpiarNombreArchivo(nombre) {
     .toLowerCase();
 }
 
-async function convertirImagenAWebP(file, calidad = 0.85, maxWidth = 1600) {
-  if (!file || !file.type.startsWith('image/')) {
+async function crearFuenteImagen(archivo) {
+  if (!archivo) {
+    throw new Error('No se recibió ninguna imagen');
+  }
+
+  // createImageBitmap suele ser más estable y consume menos memoria.
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(archivo, {
+        imageOrientation: 'from-image'
+      });
+
+      if (bitmap.width > 0 && bitmap.height > 0) {
+        return {
+          imagen: bitmap,
+          width: bitmap.width,
+          height: bitmap.height,
+          liberar() {
+            if (typeof bitmap.close === 'function') bitmap.close();
+          }
+        };
+      }
+
+      if (typeof bitmap.close === 'function') bitmap.close();
+    } catch (errorBitmap) {
+      console.warn('createImageBitmap no pudo leer la imagen; se usará Image():', errorBitmap);
+    }
+  }
+
+  const objectUrl = URL.createObjectURL(archivo);
+  const img = new Image();
+  img.decoding = 'async';
+
+  try {
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('No se pudo leer la imagen seleccionada'));
+      img.src = objectUrl;
+    });
+
+    if (typeof img.decode === 'function') {
+      try {
+        await img.decode();
+      } catch {
+        // onload ya confirmó que el navegador pudo leer la imagen.
+      }
+    }
+
+    if (!img.naturalWidth || !img.naturalHeight) {
+      throw new Error('La imagen no tiene dimensiones válidas');
+    }
+
+    return {
+      imagen: img,
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+      liberar() {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl);
+    throw error;
+  }
+}
+
+async function verificarImagenGenerada(archivo) {
+  let fuente = null;
+
+  try {
+    fuente = await crearFuenteImagen(archivo);
+
+    // La revisión se hace en un canvas pequeño para evitar problemas de memoria.
+    const maxAnchoPrueba = 240;
+    const maxAltoPrueba = 480;
+    const escala = Math.min(
+      1,
+      maxAnchoPrueba / fuente.width,
+      maxAltoPrueba / fuente.height
+    );
+
+    const width = Math.max(1, Math.round(fuente.width * escala));
+    const height = Math.max(1, Math.round(fuente.height * escala));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d', {
+      alpha: false,
+      willReadFrequently: true
+    });
+
+    if (!ctx) {
+      throw new Error('No se pudo crear el verificador de imagen');
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(fuente.imagen, 0, 0, width, height);
+
+    const pixeles = ctx.getImageData(0, 0, width, height).data;
+
+    let sumaBrillo = 0;
+    let sumaBrilloCuadrado = 0;
+    let pixelesNoBlancos = 0;
+    let pixelesMuyOscuros = 0;
+    let total = 0;
+
+    for (let i = 0; i < pixeles.length; i += 4) {
+      const r = pixeles[i];
+      const g = pixeles[i + 1];
+      const b = pixeles[i + 2];
+
+      // Brillo perceptual aproximado.
+      const brillo = (r * 0.2126) + (g * 0.7152) + (b * 0.0722);
+
+      sumaBrillo += brillo;
+      sumaBrilloCuadrado += brillo * brillo;
+      total++;
+
+      if (r < 245 || g < 245 || b < 245) {
+        pixelesNoBlancos++;
+      }
+
+      if (r < 12 && g < 12 && b < 12) {
+        pixelesMuyOscuros++;
+      }
+    }
+
+    if (!total) {
+      return {
+        valida: false,
+        pareceBlanca: true,
+        motivo: 'La imagen no contiene píxeles visibles'
+      };
+    }
+
+    const brilloPromedio = sumaBrillo / total;
+    const varianza = Math.max(
+      0,
+      (sumaBrilloCuadrado / total) - (brilloPromedio * brilloPromedio)
+    );
+    const desviacion = Math.sqrt(varianza);
+    const porcentajeNoBlanco = pixelesNoBlancos / total;
+    const porcentajeMuyOscuro = pixelesMuyOscuros / total;
+
+    // No se marca como blanca solo por tener fondo blanco.
+    // También debe tener casi cero variación y casi ningún píxel con contenido.
+    const pareceBlanca =
+      brilloPromedio > 251.5 &&
+      desviacion < 4 &&
+      porcentajeNoBlanco < 0.005;
+
+    const pareceNegra =
+      brilloPromedio < 3 &&
+      desviacion < 3 &&
+      porcentajeMuyOscuro > 0.995;
+
+    return {
+      valida: !pareceBlanca && !pareceNegra,
+      pareceBlanca,
+      pareceNegra,
+      motivo: pareceBlanca
+        ? 'La imagen quedó prácticamente blanca'
+        : pareceNegra
+          ? 'La imagen quedó prácticamente negra'
+          : '',
+      brilloPromedio: Number(brilloPromedio.toFixed(2)),
+      desviacion: Number(desviacion.toFixed(2)),
+      porcentajeNoBlanco: Number((porcentajeNoBlanco * 100).toFixed(3)),
+      pesoKB: Number((archivo.size / 1024).toFixed(2)),
+      dimensiones: `${fuente.width}x${fuente.height}`
+    };
+  } finally {
+    if (fuente) fuente.liberar();
+  }
+}
+
+async function convertirImagenAWebP(
+  file,
+  calidad = 0.85,
+  maxWidth = 1600,
+  maxHeight = 5000,
+  maxPixels = 8000000
+) {
+  if (!file || !String(file.type || '').startsWith('image/')) {
     throw new Error('El archivo debe ser una imagen');
   }
 
-  const img = new Image();
-  const objectUrl = URL.createObjectURL(file);
+  let fuente = null;
+  let canvas = null;
 
-  await new Promise((resolve, reject) => {
-    img.onload = resolve;
-    img.onerror = () => reject(new Error('No se pudo leer la imagen'));
-    img.src = objectUrl;
-  });
+  try {
+    fuente = await crearFuenteImagen(file);
 
-  let width = img.width;
-  let height = img.height;
+    const anchoOriginal = fuente.width;
+    const altoOriginal = fuente.height;
 
-  if (width > maxWidth) {
-    height = Math.round((height * maxWidth) / width);
-    width = maxWidth;
+    let escala = Math.min(
+      1,
+      maxWidth / anchoOriginal,
+      maxHeight / altoOriginal
+    );
+
+    const pixelesEscalados = anchoOriginal * altoOriginal * escala * escala;
+
+    if (pixelesEscalados > maxPixels) {
+      escala *= Math.sqrt(maxPixels / pixelesEscalados);
+    }
+
+    const width = Math.max(1, Math.round(anchoOriginal * escala));
+    const height = Math.max(1, Math.round(altoOriginal * escala));
+
+    canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d', {
+      alpha: false
+    });
+
+    if (!ctx) {
+      throw new Error('El navegador no pudo preparar la conversión');
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(fuente.imagen, 0, 0, width, height);
+
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        resultado => {
+          if (!resultado) {
+            reject(new Error('No se pudo generar el archivo WebP'));
+            return;
+          }
+          resolve(resultado);
+        },
+        'image/webp',
+        calidad
+      );
+    });
+
+    if (blob.type && blob.type !== 'image/webp') {
+      throw new Error('El navegador no pudo generar un WebP válido');
+    }
+
+    const nombreWebP =
+      limpiarNombreArchivo(file.name).replace(/\.[^.]+$/, '') + '.webp';
+
+    const archivoWebP = new File([blob], nombreWebP, {
+      type: 'image/webp',
+      lastModified: Date.now()
+    });
+
+    // Se vuelve a abrir el WebP antes de devolverlo.
+    const verificacion = await verificarImagenGenerada(archivoWebP);
+
+    console.log('🔍 Verificación WebP:', {
+      archivo: file.name,
+      original: `${anchoOriginal}x${altoOriginal}`,
+      convertido: `${width}x${height}`,
+      calidad,
+      maxWidth,
+      ...verificacion
+    });
+
+    if (!verificacion.valida) {
+      throw new Error(
+        verificacion.motivo || 'La conversión generó una imagen inválida'
+      );
+    }
+
+    return archivoWebP;
+  } finally {
+    if (fuente) fuente.liberar();
+
+    // Libera la memoria del canvas en teléfonos con poca RAM.
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+  }
+}
+
+function obtenerExtensionImagenOriginal(archivo) {
+  const tipos = {
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp'
+  };
+
+  if (tipos[archivo.type]) return tipos[archivo.type];
+
+  const extension = String(archivo.name || '')
+    .split('.')
+    .pop()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  return extension || 'jpg';
+}
+
+async function prepararComprobanteSeguro(archivoOriginal, actualizarEstado) {
+  const intentos = [
+    { calidad: 0.85, maxWidth: 1600, maxHeight: 5000, maxPixels: 8000000 },
+    { calidad: 0.82, maxWidth: 1200, maxHeight: 4000, maxPixels: 6000000 },
+    { calidad: 0.80, maxWidth: 1000, maxHeight: 3200, maxPixels: 4000000 }
+  ];
+
+  for (let i = 0; i < intentos.length; i++) {
+    const intento = intentos[i];
+
+    if (typeof actualizarEstado === 'function') {
+      actualizarEstado(`Verificando comprobante (${i + 1}/${intentos.length})...`);
+    }
+
+    try {
+      const archivoWebP = await convertirImagenAWebP(
+        archivoOriginal,
+        intento.calidad,
+        intento.maxWidth,
+        intento.maxHeight,
+        intento.maxPixels
+      );
+
+      return {
+        archivo: archivoWebP,
+        extension: 'webp',
+        contentType: 'image/webp',
+        convertidoAWebP: true,
+        intento: i + 1
+      };
+    } catch (error) {
+      console.warn(`⚠️ Conversión WebP intento ${i + 1} falló:`, error);
+
+      // Da tiempo al navegador para liberar memoria antes del próximo intento.
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
   }
 
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, width, height);
-
-  URL.revokeObjectURL(objectUrl);
-
-  const blob = await new Promise(resolve => {
-    canvas.toBlob(resolve, 'image/webp', calidad);
-  });
-
-  if (!blob) {
-    throw new Error('No se pudo convertir la imagen a WebP');
+  if (typeof actualizarEstado === 'function') {
+    actualizarEstado('Verificando imagen original...');
   }
 
-  const nombreWebP = limpiarNombreArchivo(file.name).replace(/\.[^.]+$/, '') + '.webp';
+  const verificacionOriginal = await verificarImagenGenerada(archivoOriginal);
 
-  return new File([blob], nombreWebP, {
-    type: 'image/webp',
-    lastModified: Date.now()
-  });
+  console.log('🔍 Verificación del comprobante original:', verificacionOriginal);
+
+  if (!verificacionOriginal.valida) {
+    throw new Error(
+      'El comprobante no contiene información visible. Selecciona otra imagen.'
+    );
+  }
+
+  alert(
+    '⚠️ La conversión a WebP no pudo completarse correctamente. ' +
+    'Para evitar un comprobante blanco, se enviará la imagen original.'
+  );
+
+  return {
+    archivo: archivoOriginal,
+    extension: obtenerExtensionImagenOriginal(archivoOriginal),
+    contentType: archivoOriginal.type || 'image/jpeg',
+    convertidoAWebP: false,
+    intento: 0
+  };
 }
 
 function nombreCartonWebP(numero) {
@@ -2293,8 +2619,17 @@ guardarDatosPagoClienteAutomatico();
    const archivoOriginal = document.getElementById('comprobante').files[0];
 if (!archivoOriginal) throw new Error('Debes subir un comprobante');
 
-// Convertir automáticamente JPG / PNG / WEBP a WebP optimizado
-const archivoWebP = await convertirImagenAWebP(archivoOriginal, 0.85, 1600);
+// Convierte, verifica y reintenta antes de subir a Supabase.
+const resultadoComprobante = await prepararComprobanteSeguro(
+  archivoOriginal,
+  mensaje => {
+    boton.textContent = mensaje;
+  }
+);
+
+const archivoFinal = resultadoComprobante.archivo;
+const extensionFinal = resultadoComprobante.extension;
+const tipoFinal = resultadoComprobante.contentType;
 
 const cedulaArchivo = String(usuario.cedula || '')
   .replace(/\D/g, '') || 'sin-cedula';
@@ -2303,12 +2638,15 @@ const idArchivo = crypto.randomUUID
   ? crypto.randomUUID()
   : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-const nombreArchivo = `${cedulaArchivo}-${Date.now()}-${idArchivo}.webp`;
+const nombreArchivo =
+  `${cedulaArchivo}-${Date.now()}-${idArchivo}.${extensionFinal}`;
+
+boton.textContent = 'Subiendo comprobante...';
 
 const { error: errorUpload } = await supabase.storage
   .from('comprobantes')
-  .upload(nombreArchivo, archivoWebP, {
-    contentType: 'image/webp',
+  .upload(nombreArchivo, archivoFinal, {
+    contentType: tipoFinal,
     upsert: false,
     cacheControl: '31536000'
   });
@@ -2317,7 +2655,7 @@ if (errorUpload) {
   throw new Error('Error subiendo comprobante: ' + errorUpload.message);
 }
 
-// URL pública del comprobante en WebP
+// URL pública del archivo final, ya verificado.
 const { data: publicData } = supabase.storage
   .from('comprobantes')
   .getPublicUrl(nombreArchivo);
